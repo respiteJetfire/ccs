@@ -26,6 +26,7 @@ local function updateScripts()
     local filesToUpdate = {
         "startup_server.lua",
         "updater_server.lua",
+        "invRequest/server.lua",
         -- add more files as needed
     }
 
