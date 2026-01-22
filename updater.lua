@@ -19,3 +19,22 @@ local function downloadFile(filePath)
     end
 end
 
+-- main method to call functions
+local function updateScripts()
+    local filesToUpdate = {
+        "startup.lua",
+        "updater.lua",
+        -- add more files as needed
+    }
+
+    for _, filePath in ipairs(filesToUpdate) do
+        -- delete the filepath if it already exists
+        if fs.exists(filePath) then
+            fs.delete(filePath)
+        end
+        downloadFile(filePath)
+    end
+end
+
+
+updateScripts()
