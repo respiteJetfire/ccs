@@ -4,12 +4,14 @@
 local repo = "https://github.com/respiteJetfire/ccs/blob/main/"
 
 -- for any .lua file and directory in the repository, you can use the following code to download and update files.
+-- remove the _client from the filename for client scripts
+-- e.g. startup_client.lua becomes startup.lua
 
 local function downloadFile(filePath)
     local url = repo .. filePath .. "?raw=true"
     local response = http.get(url)
     if response then
-        local file = fs.open(filePath, "w")
+        local file = fs.open(filePath:gsub("_server", ""), "w")
         file.write(response.readAll())
         file.close()
         response.close()
@@ -22,8 +24,8 @@ end
 -- main method to call functions
 local function updateScripts()
     local filesToUpdate = {
-        "startup.lua",
-        "updater.lua",
+        "startup_server.lua",
+        "updater_server.lua",
         -- add more files as needed
     }
 
