@@ -1,5 +1,5 @@
 -- CC script to manage drawers to pull resources into chest via a rednet request (item id and quantity), modem is always on top, chest is always on the right, drawer is always below and item slot is 2)
-local version = "0.1"
+local version = "0.1.1"
 print("[INFO] Drawer Manager v" .. version .. " starting...")
 print("[INFO] Opening rednet on top...")
 rednet.open("top")
@@ -32,8 +32,7 @@ while true do
                 print("[ERROR] Unable to withdraw items.")
             end
         else
-            rednet.send(senderId, "Error: Item not available in drawer.")
-            print("[ERROR] Item not available in drawer.")
+            print("[INFO] Item not available in drawer. Ignoring request.")
         end
     else
         rednet.send(senderId, "Error: Invalid request format. Use 'item_id quantity'.")
