@@ -1,9 +1,11 @@
--- CC script to monitor colony and request resources via rednet
+-- CC script to automatically monitor colony requests and fulfill via rednet
 -- Uses MineColonies colony peripheral for ComputerCraft 1.20.1
-local version = "0.1.1"
+local version = "0.3.0"
 local PASSWORD = "apple"
+local CHECK_INTERVAL = 10  -- seconds between checks
 
 print("[INFO] Colony Manager v" .. version .. " starting...")
+print("[INFO] Check interval: " .. tostring(CHECK_INTERVAL) .. "s")
 
 -- Find and open wireless modem
 print("[INFO] Searching for available modem...")
@@ -34,10 +36,13 @@ if not colony then
 end
 print("[INFO] Colony peripheral found.")
 
+-- Track already requested items to avoid duplicate requests
+local requestedItems = {}
+
 -- Function to request items from drawer network
 local function requestItems(itemId, quantity)
     local request = PASSWORD .. " " .. itemId .. " " .. tostring(quantity)
-    print("[INFO] Requesting " .. tostring(quantity) .. " of " .. itemId)
+    print("[REQ] " .. itemId .. " x" .. tostring(quantity))
     rednet.broadcast(request)
     
     local timeout = os.startTimer(5)
@@ -47,94 +52,43 @@ local function requestItems(itemId, quantity)
             print("[RECV] From " .. tostring(param1) .. ": " .. tostring(param2))
             return true
         elseif event == "timer" and param1 == timeout then
-            print("[TIMEOUT] No response for " .. itemId)
             return false
         end
     end
 end
 
--- Function to display current work orders
-local function showWorkOrders()
-    print("\n=== Active Work Orders ===")
-    local workOrders = colony.getWorkOrders()
-    if workOrders and #workOrders > 0 then
-        for i, order in ipairs(workOrders) do
-            print(tostring(i) .. ". " .. (order.type or "Unknown") .. " - " .. (order.buildingName or "N/A"))
+-- Function to check and fulfill colony requests
+local function checkColonyRequests()
+    local requests = colony.getRequests()
+    if requests and #requests > 0 then
+        print("[CHECK] " .. tostring(#requests) .. " request(s) found")
+        for _, req in ipairs(requests) do
+            local itemName = req.name or (req.items and req.items[1] and req.items[1].name) or nil
+            local count = req.count or (req.items and req.items[1] and req.items[1].count) or 1
+            
+            if itemName then
+                local requestKey = itemName .. ":" .. tostring(count)
+                
+                if not requestedItems[requestKey] then
+                    requestItems(itemName, count)
+                    requestedItems[requestKey] = os.clock()
+                end
+            end
         end
-    else
-        print("No active work orders.")
     end
-end
-
--- Function to show colony info
-local function showColonyInfo()
-    print("\n=== Colony Information ===")
-    local citizens = colony.getCitizens()
-    local buildings = colony.getBuildings()
-    print("Citizens: " .. tostring(citizens and #citizens or 0))
-    print("Buildings: " .. tostring(buildings and #buildings or 0))
-    print("Happiness: " .. tostring(colony.getHappiness() or "N/A"))
-end
-
--- Function to request drawer info
-local function requestDrawerInfo()
-    local request = PASSWORD .. " info"
-    print("[INFO] Broadcasting info check request...")
-    rednet.broadcast(request)
     
-    print("[INFO] Waiting for responses (timeout: 5 seconds)...")
-    local timeout = os.startTimer(5)
-    local responsesReceived = false
-    while true do
-        local event, param1, param2 = os.pullEvent()
-        if event == "rednet_message" then
-            print("[RECV] From " .. tostring(param1) .. ": " .. tostring(param2))
-            responsesReceived = true
-        elseif event == "timer" and param1 == timeout then
-            break
+    -- Clear old request tracking (older than 60 seconds)
+    local now = os.clock()
+    for key, time in pairs(requestedItems) do
+        if now - time > 60 then
+            requestedItems[key] = nil
         end
     end
-    if not responsesReceived then
-        print("[TIMEOUT] No responses received.")
-    end
 end
 
--- Main menu
-local function showMenu()
-    print("\n=== Colony Manager Menu ===")
-    print("1. Show colony info")
-    print("2. Show work orders")
-    print("3. Request drawer info")
-    print("4. Manual item request")
-    print("0. Exit")
-    print("Enter choice:")
-end
-
--- Main loop
+-- Main auto loop
+print("[INFO] Auto-monitor running...")
 while true do
-    showMenu()
-    local choice = read()
-    
-    if choice == "1" then
-        showColonyInfo()
-    elseif choice == "2" then
-        showWorkOrders()
-    elseif choice == "3" then
-        requestDrawerInfo()
-    elseif choice == "4" then
-        print("Enter item ID:")
-        local itemId = read()
-        print("Enter quantity:")
-        local quantity = tonumber(read())
-        if itemId ~= "" and quantity and quantity > 0 then
-            requestItems(itemId, quantity)
-        else
-            print("[ERROR] Invalid input.")
-        end
-    elseif choice == "0" then
-        print("[INFO] Exiting Colony Manager.")
-        break
-    else
-        print("[ERROR] Invalid choice.")
-    end
+    checkColonyRequests()
+    sleep(CHECK_INTERVAL)
 end
