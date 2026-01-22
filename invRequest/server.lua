@@ -1,9 +1,21 @@
 -- CC script to request items from drawer managers via rednet
-local version = "0.2.0"
+local version = "0.2.1"
 local PASSWORD = "apple"
 print("[INFO] Item Request Manager v" .. version .. " starting...")
-print("[INFO] Opening rednet on top...")
-rednet.open("top")
+
+print("[INFO] Searching for available modem...")
+local modemSide = nil
+for _, side in ipairs(peripheral.getNames()) do
+    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
+        modemSide = side
+        break
+    end
+end
+if not modemSide then
+    error("[ERROR] No wireless modem found! Please attach a modem.")
+end
+print("[INFO] Opening rednet on " .. modemSide .. "...")
+rednet.open(modemSide)
 print("[INFO] Rednet opened. Ready to request items.")
 
 while true do
