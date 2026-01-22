@@ -1,5 +1,5 @@
 -- CC script to manage drawers to pull resources into chest via a rednet request (item id and quantity), modem is always on top, chest is always on the right, drawer is always below and item slot is 2)
-local version = "0.2.0"
+local version = "0.2.1"
 local PASSWORD = "apple"
 print("[INFO] Drawer Manager v" .. version .. " starting...")
 print("[INFO] Opening rednet on top...")
@@ -38,11 +38,22 @@ while true do
                 print("[INFO] Item available in drawer: " .. available.name .. " x" .. tostring(available.count))
                 local toWithdraw = math.min(quantity, available.count)
                 print("[INFO] Attempting to withdraw " .. tostring(toWithdraw) .. " of " .. itemId)
-                local withdrawn = drawer.pushItems("right", SLOT, toWithdraw)
-                print("[INFO] Withdrawn: " .. tostring(withdrawn))
-                if withdrawn > 0 then
-                    print("[INFO] Inserting " .. tostring(withdrawn) .. " of " .. itemId .. " into chest.")
-                    rednet.send(senderId, "Success: Withdrawn " .. withdrawn .. " of " .. itemId)
+                
+                local totalWithdrawn = 0
+                local remaining = toWithdraw
+                while remaining > 0 do
+                    local transferred = drawer.pushItems("right", SLOT, remaining)
+                    if transferred == 0 then
+                        break
+                    end
+                    totalWithdrawn = totalWithdrawn + transferred
+                    remaining = remaining - transferred
+                end
+                
+                print("[INFO] Total withdrawn: " .. tostring(totalWithdrawn))
+                if totalWithdrawn > 0 then
+                    print("[INFO] Successfully transferred " .. tostring(totalWithdrawn) .. " of " .. itemId .. " into chest.")
+                    rednet.send(senderId, "Success: Withdrawn " .. totalWithdrawn .. " of " .. itemId)
                     print("[SEND] Success response sent.")
                 else
                     print("[ERROR] Unable to withdraw items.")
