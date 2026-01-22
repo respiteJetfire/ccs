@@ -24,7 +24,6 @@ while true do
             print("[INFO] Withdrawn: " .. tostring(withdrawn))
             if withdrawn > 0 then
                 print("[INFO] Inserting " .. tostring(withdrawn) .. " of " .. itemId .. " into chest.")
-                chest.insert({name = itemId, count = withdrawn})
                 rednet.send(senderId, "Success: Withdrawn " .. withdrawn .. " of " .. itemId)
                 print("[SEND] Success response sent.")
             else
