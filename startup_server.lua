@@ -1,7 +1,8 @@
 -- CC script to request items from drawer managers via rednet
 -- Run updater.lua before continuing
 shell.run("updater.lua")
-local version = "0.1.1"
+local version = "0.2.0"
+local PASSWORD = "apple"
 print("[INFO] Item Request Manager v" .. version .. " starting...")
 print("[INFO] Opening rednet on top...")
 rednet.open("top")
@@ -9,11 +10,31 @@ print("[INFO] Rednet opened. Ready to request items.")
 
 while true do
     print("\n=== Item Request ===")
-    print("Enter item ID (e.g., minecraft:iron_ingot):")
+    print("Enter item ID (e.g., minecraft:iron_ingot) or 'info' to check drawer status:")
     local itemId = read()
     
     if itemId == "" then
         print("[ERROR] Item ID cannot be empty.")
+    elseif itemId:lower() == "info" then
+        local request = PASSWORD .. " info"
+        print("[INFO] Broadcasting info check request...")
+        rednet.broadcast(request)
+        
+        print("[INFO] Waiting for responses (timeout: 5 seconds)...")
+        local timeout = os.startTimer(5)
+        local responsesReceived = false
+        while true do
+            local event, param1, param2 = os.pullEvent()
+            if event == "rednet_message" then
+                print("[RECV] From " .. tostring(param1) .. ": " .. tostring(param2))
+                responsesReceived = true
+            elseif event == "timer" and param1 == timeout then
+                break
+            end
+        end
+        if not responsesReceived then
+            print("[TIMEOUT] No responses received.")
+        end
     else
         print("Enter quantity:")
         local quantityStr = read()
@@ -22,8 +43,8 @@ while true do
         if not quantity or quantity <= 0 then
             print("[ERROR] Invalid quantity. Must be a positive number.")
         else
-            local request = itemId .. " " .. tostring(quantity)
-            print("[INFO] Broadcasting request: " .. request)
+            local request = PASSWORD .. " " .. itemId .. " " .. tostring(quantity)
+            print("[INFO] Broadcasting request: " .. itemId .. " " .. tostring(quantity))
             rednet.broadcast(request)
             
             print("[INFO] Waiting for response (timeout: 5 seconds)...")
