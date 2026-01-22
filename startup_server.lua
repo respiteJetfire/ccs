@@ -1,5 +1,7 @@
 -- CC script to request items from drawer managers via rednet
-local version = "0.1"
+-- Run updater.lua before continuing
+shell.run("updater.lua")
+local version = "0.1.1"
 print("[INFO] Item Request Manager v" .. version .. " starting...")
 print("[INFO] Opening rednet on top...")
 rednet.open("top")
