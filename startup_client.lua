@@ -20,7 +20,7 @@ while true do
             print("[INFO] Item available in drawer: " .. available.name .. " x" .. tostring(available.count))
             local toWithdraw = math.min(quantity, available.count)
             print("[INFO] Attempting to withdraw " .. tostring(toWithdraw) .. " of " .. itemId)
-            local withdrawn = drawer.pushItems(SLOT, toWithdraw)
+            local withdrawn = drawer.pushItems("right", SLOT, toWithdraw)
             print("[INFO] Withdrawn: " .. tostring(withdrawn))
             if withdrawn > 0 then
                 print("[INFO] Inserting " .. tostring(withdrawn) .. " of " .. itemId .. " into chest.")
