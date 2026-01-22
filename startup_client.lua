@@ -27,7 +27,6 @@ while true do
                 rednet.send(senderId, "Success: Withdrawn " .. withdrawn .. " of " .. itemId)
                 print("[SEND] Success response sent.")
             else
-                rednet.send(senderId, "Error: Unable to withdraw items.")
                 print("[ERROR] Unable to withdraw items.")
             end
         else
