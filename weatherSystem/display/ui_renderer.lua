@@ -1,6 +1,6 @@
 -- weatherSystem/display/ui_renderer.lua
 -- UI Renderer for Weather Display with 24-hour and 5-day forecasts
-local version = "3.0.1"
+local version = "3.1.0"
 
 local renderer = {}
 
@@ -292,6 +292,11 @@ function renderer.draw5DayPage(forecast, stationId)
     -- Try to get station-specific forecast
     if stationId and forecast.stationForecasts and forecast.stationForecasts[tostring(stationId)] then
         fiveDayData = forecast.stationForecasts[tostring(stationId)].fiveDay
+    end
+    
+    -- Fall back to global 5-day forecast
+    if not fiveDayData then
+        fiveDayData = forecast.fiveDayForecasts
     end
     
     if not fiveDayData then

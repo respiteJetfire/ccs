@@ -1,7 +1,7 @@
 -- weatherSystem/master/forecast.lua
 -- Weather Forecast Logic with Per-Station Temperature Forecasting
 -- Includes 24-hour and 5-day forecasts with weather control enforcement
-local version = "3.0.0"
+local version = "3.1.0"
 
 local forecast = {}
 
@@ -38,8 +38,41 @@ local globalWeatherState = {
     currentRainChance = 15,
     hourlyForecasts = {},
     fiveDayForecasts = {},
-    lastCommandTick = 0
+    lastCommandTick = 0,
+    lastForecastHour = -1,
+    lastForecastDay = -1
 }
+
+-- Cached forecasts (persist until hour changes)
+local cachedStationForecasts = {}
+local cachedHourlyForecasts = {}
+local cacheLastHour = -1
+local cacheLastDay = -1
+
+-- Deterministic random based on seed (for consistent forecasts)
+local function seededRandom(seed, min, max)
+    -- Simple deterministic pseudo-random using seed
+    local x = math.sin(seed * 12.9898) * 43758.5453
+    local r = x - math.floor(x)  -- 0-1 range
+    if min and max then
+        return math.floor(r * (max - min + 1)) + min
+    end
+    return r
+end
+
+-- Generate a deterministic seed for a specific day/hour
+local function getForecastSeed(gameDay, hour, stationId)
+    local baseSeed = gameDay * 1000 + hour * 10
+    if stationId then
+        -- Add station-specific variation
+        local stationHash = 0
+        for i = 1, #tostring(stationId) do
+            stationHash = stationHash + string.byte(tostring(stationId), i)
+        end
+        baseSeed = baseSeed + stationHash
+    end
+    return baseSeed
+end
 
 -- Station registry for distance calculations
 local stationRegistry = {}
@@ -188,13 +221,15 @@ local function getAltitudeTemperatureAdjustment(altitude)
     return -(heightAboveSea / 100) * 6
 end
 
--- Calculate rain probability for hour
+-- Calculate rain probability for hour (deterministic)
 function forecast.calculateHourlyRainChance(gameDay, hour, previousHourRaining)
     local baseChance = 15
     local seasonMod = getSeasonalRainModifier(gameDay)
     local timeMod = getTimeOfDayModifier(hour * forecast.TICKS_PER_HOUR)
     local persistenceMod = previousHourRaining and 2.5 or 1.0
-    local pressureMod = 0.8 + math.random() * 0.4
+    -- Deterministic pressure modifier based on day and hour
+    local seed = getForecastSeed(gameDay, hour, "pressure")
+    local pressureMod = 0.8 + seededRandom(seed) * 0.4
     local finalChance = baseChance * seasonMod * timeMod * persistenceMod * pressureMod
     return math.max(5, math.min(85, math.floor(finalChance)))
 end
@@ -207,7 +242,7 @@ function forecast.calculateThunderChance(rainChance, gameDay)
     return math.floor(thunderBase * (rainChance / 50))
 end
 
--- Calculate per-station temperature for specific hour
+-- Calculate per-station temperature for specific hour (deterministic)
 function forecast.calculateStationTemperature(stationData, gameDay, hour, isRaining, rainLevel, stationTemps)
     local biome = stationData and stationData.biome or "minecraft:plains"
     local altitude = stationData and stationData.altitude or 64
@@ -242,8 +277,9 @@ function forecast.calculateStationTemperature(stationData, gameDay, hour, isRain
         stationInfluence = getNearbyStationTempInfluence(stationId, stationTemps)
     end
     
-    -- Random daily variation
-    local dailyVariation = (math.random() - 0.5) * 4
+    -- Deterministic daily variation (based on day and station)
+    local seed = getForecastSeed(gameDay, hour, stationId)
+    local dailyVariation = (seededRandom(seed) - 0.5) * 4
     
     local finalTemp = baseTemp + seasonMod + timeVariation + altitudeAdj + weatherAdj + stationInfluence + dailyVariation
     
@@ -263,8 +299,16 @@ function forecast.getWeatherType(temp, isRaining, isThundering)
     return forecast.WEATHER_STATES.RAIN
 end
 
--- Generate 24-hour forecast for a station
+-- Generate 24-hour forecast for a station (with deterministic weather)
 function forecast.generate24HourForecast(stationData, gameDay, currentHour)
+    local stationId = stationData and stationData.id or "default"
+    
+    -- Check cache - return cached forecast if hour hasn't changed
+    local cacheKey = tostring(stationId) .. "_" .. tostring(gameDay) .. "_" .. tostring(currentHour)
+    if cachedStationForecasts[cacheKey] then
+        return cachedStationForecasts[cacheKey]
+    end
+    
     local forecasts = {}
     local wasRaining = globalWeatherState.isRaining
     local stationTemps = {}
@@ -276,9 +320,15 @@ function forecast.generate24HourForecast(stationData, gameDay, currentHour)
         local rainChance = forecast.calculateHourlyRainChance(forecastDay, forecastHour, wasRaining)
         local thunderChance = forecast.calculateThunderChance(rainChance, forecastDay)
         
-        local willRain = math.random(100) <= rainChance
-        local willThunder = willRain and math.random(100) <= thunderChance
-        local rainLevel = willRain and (0.3 + math.random() * 0.7) or 0
+        -- Use deterministic random for weather decisions
+        local weatherSeed = getForecastSeed(forecastDay, forecastHour, stationId)
+        local rainRoll = seededRandom(weatherSeed + 1, 1, 100)
+        local thunderRoll = seededRandom(weatherSeed + 2, 1, 100)
+        local rainLevelRoll = seededRandom(weatherSeed + 3)
+        
+        local willRain = rainRoll <= rainChance
+        local willThunder = willRain and thunderRoll <= thunderChance
+        local rainLevel = willRain and (0.3 + rainLevelRoll * 0.7) or 0
         
         local temp = forecast.calculateStationTemperature(stationData, forecastDay, forecastHour, willRain, rainLevel, stationTemps)
         
@@ -307,26 +357,42 @@ function forecast.generate24HourForecast(stationData, gameDay, currentHour)
         }
         
         wasRaining = willRain
-        stationTemps[stationData and stationData.id or "default"] = temp
+        stationTemps[stationId] = temp
     end
+    
+    -- Cache this forecast
+    cachedStationForecasts[cacheKey] = forecasts
     
     return forecasts
 end
 
--- Generate 5-day forecast for a station
+-- Generate 5-day forecast for a station (cached per day)
 function forecast.generate5DayForecast(stationData, gameDay)
+    local stationId = stationData and stationData.id or "default"
+    local cacheKey = "5day_" .. tostring(stationId) .. "_" .. tostring(gameDay)
+    
+    -- Check cache
+    if cachedStationForecasts[cacheKey] then
+        return cachedStationForecasts[cacheKey]
+    end
+    
     local forecasts = {}
     
     for day = 0, 4 do
         local forecastDay = gameDay + day
         local dayTemps, dayRainChances = {}, {}
         
+        -- Sample temperatures at multiple hours of the day
         for hour = 0, 23, 3 do
-            local hourForecast = forecast.generate24HourForecast(stationData, forecastDay, hour)
-            if hourForecast[0] then
-                table.insert(dayTemps, hourForecast[0].temperature)
-                table.insert(dayRainChances, hourForecast[0].rainChance)
-            end
+            local seed = getForecastSeed(forecastDay, hour, stationId)
+            local rainChance = forecast.calculateHourlyRainChance(forecastDay, hour, day > 0)
+            local rainRoll = seededRandom(seed + 1, 1, 100)
+            local willRain = rainRoll <= rainChance
+            local rainLevel = willRain and (0.3 + seededRandom(seed + 3) * 0.7) or 0
+            
+            local temp = forecast.calculateStationTemperature(stationData, forecastDay, hour, willRain, rainLevel, {})
+            table.insert(dayTemps, temp)
+            table.insert(dayRainChances, rainChance)
         end
         
         local avgRainChance, highTemp, lowTemp = 0, -999, 999
@@ -350,7 +416,8 @@ function forecast.generate5DayForecast(stationData, gameDay)
         if day > 3 then confidence = forecast.CONFIDENCE.LOW
         elseif day > 1 then confidence = forecast.CONFIDENCE.MEDIUM end
         
-        local dayName = day == 0 and "Today" or (day == 1 and "Tomorrow" or ("Day " .. tostring(forecastDay % 7 + 1)))
+        -- Day names: Today, Tomorrow, Day 3, Day 4, Day 5
+        local dayName = day == 0 and "Today" or (day == 1 and "Tomorrow" or ("Day " .. tostring(day + 1)))
         
         forecasts[day] = {
             day = forecastDay,
@@ -365,13 +432,43 @@ function forecast.generate5DayForecast(stationData, gameDay)
         }
     end
     
+    -- Cache the forecast
+    cachedStationForecasts[cacheKey] = forecasts
+    
     return forecasts
+end
+
+-- Clear forecast cache when hour changes
+function forecast.clearCacheIfNeeded(gameDay, currentHour)
+    if cacheLastDay ~= gameDay or cacheLastHour ~= currentHour then
+        -- Hour or day changed, clear caches
+        cachedStationForecasts = {}
+        cachedHourlyForecasts = {}
+        cacheLastDay = gameDay
+        cacheLastHour = currentHour
+        return true
+    end
+    return false
 end
 
 -- Check and apply weather changes using commands API with duration
 function forecast.checkAndApplyWeather(currentTick, gameDay)
-    if currentTick < globalWeatherState.nextWeatherCheck then return nil end
-    if currentTick - globalWeatherState.lastCommandTick < 500 then return nil end
+    local currentHour = math.floor(currentTick / forecast.TICKS_PER_HOUR) % 24
+    
+    -- Check if this is a new hour and we need to apply weather
+    local isNewHour = globalWeatherState.lastForecastHour ~= currentHour or globalWeatherState.lastForecastDay ~= gameDay
+    
+    if not isNewHour and currentTick - globalWeatherState.lastCommandTick < 1000 then
+        return nil
+    end
+    
+    -- Update last forecast time
+    if isNewHour then
+        globalWeatherState.lastForecastHour = currentHour
+        globalWeatherState.lastForecastDay = gameDay
+        -- Clear caches on hour change
+        forecast.clearCacheIfNeeded(gameDay, currentHour)
+    end
     
     globalWeatherState.nextWeatherCheck = currentTick + forecast.TICKS_PER_HOUR
     
@@ -381,15 +478,17 @@ function forecast.checkAndApplyWeather(currentTick, gameDay)
         hourForecast = globalWeatherState.hourlyForecasts[0]
     end
     
+    if not hourForecast then return nil end
+    
     local weatherChanged = false
     local newState, command = nil, nil
     local duration = 0
     
-    local roll = math.random(100)
-    local shouldRain = roll <= hourForecast.rainChance
-    local shouldThunder = shouldRain and math.random(100) <= hourForecast.thunderChance
+    -- Use the deterministic forecast - the willRain was already calculated
+    local shouldRain = hourForecast.willRain
+    local shouldThunder = hourForecast.willThunder
     
-    -- Calculate duration from consecutive hours
+    -- Calculate duration from consecutive hours with same weather
     local durationHours = 1
     for i = 1, 12 do
         local futureHour = globalWeatherState.hourlyForecasts[i]
@@ -433,17 +532,13 @@ function forecast.checkAndApplyWeather(currentTick, gameDay)
         local success, result = pcall(function()
             return commands.exec(command)
         end)
-        if success then
-            print("[WEATHER] Executed: " .. command)
-        else
+        if success and result then
+            print("[WEATHER] Executed: " .. command .. " => " .. tostring(result[1]))
+        elseif not success then
             print("[WEATHER] Command failed: " .. tostring(result))
         end
     elseif command then
         print("[WEATHER] Would execute: " .. command .. " (no commands API)")
-    end
-    
-    if weatherChanged then
-        forecast.generateHourlyForecasts(currentTick, gameDay)
     end
     
     return {
@@ -456,10 +551,18 @@ function forecast.checkAndApplyWeather(currentTick, gameDay)
     }
 end
 
--- Generate global hourly forecasts
+-- Generate global hourly forecasts (deterministic per hour)
 function forecast.generateHourlyForecasts(currentGameTime, gameDay)
-    local forecasts = {}
     local currentHour = math.floor(currentGameTime / forecast.TICKS_PER_HOUR) % 24
+    
+    -- Check if we already have valid cached forecasts for this hour
+    local cacheKey = "global_" .. tostring(gameDay) .. "_" .. tostring(currentHour)
+    if cachedHourlyForecasts[cacheKey] then
+        globalWeatherState.hourlyForecasts = cachedHourlyForecasts[cacheKey]
+        return cachedHourlyForecasts[cacheKey]
+    end
+    
+    local forecasts = {}
     local wasRaining = globalWeatherState.isRaining
     
     for i = 0, 23 do
@@ -469,8 +572,13 @@ function forecast.generateHourlyForecasts(currentGameTime, gameDay)
         local rainChance = forecast.calculateHourlyRainChance(forecastDay, forecastHour, wasRaining)
         local thunderChance = forecast.calculateThunderChance(rainChance, forecastDay)
         
-        local willRain = math.random(100) <= rainChance
-        local willThunder = willRain and math.random(100) <= thunderChance
+        -- Deterministic random for global weather
+        local seed = getForecastSeed(forecastDay, forecastHour, "global")
+        local rainRoll = seededRandom(seed + 100, 1, 100)
+        local thunderRoll = seededRandom(seed + 200, 1, 100)
+        
+        local willRain = rainRoll <= rainChance
+        local willThunder = willRain and thunderRoll <= thunderChance
         
         local state = forecast.WEATHER_STATES.CLEAR
         if willThunder then state = forecast.WEATHER_STATES.THUNDER
@@ -497,6 +605,8 @@ function forecast.generateHourlyForecasts(currentGameTime, gameDay)
         wasRaining = willRain
     end
     
+    -- Cache the forecasts
+    cachedHourlyForecasts[cacheKey] = forecasts
     globalWeatherState.hourlyForecasts = forecasts
     return forecasts
 end
@@ -566,7 +676,7 @@ end
 function forecast.biomeTocelsius(biome, mcTemp)
     if biomeTemperatures[biome] then return biomeTemperatures[biome] end
     if mcTemp and mcTemp > 0.01 then return math.floor((mcTemp * 40) - 10) end
-    return math.random(0, 20)
+    return 15  -- Default temperature if biome unknown
 end
 
 -- Apply time variation
@@ -600,7 +710,7 @@ end
 
 -- Get biome humidity
 function forecast.getBiomeHumidity(biome)
-    return biomeHumidity[biome] or math.random(40, 60)
+    return biomeHumidity[biome] or 50
 end
 
 -- Apply weather to humidity
@@ -631,11 +741,17 @@ function forecast.generate(historyData, latestData, allStationsData)
     local gameDay = os.day()
     local currentHour = math.floor(gameTime / forecast.TICKS_PER_HOUR) % 24
     
+    -- Clear cache if hour changed
+    forecast.clearCacheIfNeeded(gameDay, currentHour)
+    
     if latestData and latestData.data then
         forecast.syncFromStationData(latestData.data)
     end
     
     local hourlyForecasts = forecast.generateHourlyForecasts(gameTime, gameDay)
+    
+    -- Generate global 5-day forecast (for displays without station-specific data)
+    local globalFiveDay = forecast.generate5DayForecast({id = "global", biome = "minecraft:plains", altitude = 64}, gameDay)
     
     -- Per-station forecasts
     local stationForecasts = {}
@@ -682,6 +798,7 @@ function forecast.generate(historyData, latestData, allStationsData)
             plannedDuration = globalWeatherState.plannedDuration
         },
         hourlyForecasts = hourlyForecasts,
+        fiveDayForecasts = globalFiveDay,
         stationForecasts = stationForecasts,
         summary = forecast.generateSummary(currentState, nil, hourlyForecasts)
     }

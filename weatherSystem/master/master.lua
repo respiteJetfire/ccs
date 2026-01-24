@@ -2,7 +2,7 @@
 -- Weather Master Controller
 -- Receives data from stations, stores in DB, generates forecasts
 -- Now with per-station temperature forecasting and weather control via commands API
-local version = "3.0.1"
+local version = "3.1.0"
 
 print("[INFO] Weather Master v" .. version .. " starting...")
 
