@@ -1,7 +1,7 @@
 -- weatherSystem/display/display.lua
 -- Weather Display Unit - Weather Channel Style UI
 -- Now with 24-hour and 5-day forecast pages
-local version = "3.2.0"
+local version = "3.3.0"
 
 print("[INFO] Weather Display v" .. version .. " starting...")
 

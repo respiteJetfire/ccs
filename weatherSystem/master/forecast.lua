@@ -1,7 +1,7 @@
 -- weatherSystem/master/forecast.lua
 -- Weather Forecast Logic with Per-Station Temperature Forecasting
 -- Includes 24-hour and 5-day forecasts with weather control enforcement
-local version = "3.2.1"
+local version = "3.3.0"
 
 local forecast = {}
 
@@ -806,8 +806,22 @@ function forecast.generate(historyData, latestData, allStationsData)
         end
     end
     
+    -- Get current temperature from the first station's first hour forecast for consistency
     local currentTemp = 15
+    local primaryStationId = nil
     if latestData and latestData.data then
+        -- Find the station ID from latestData
+        primaryStationId = latestData.stationId
+    end
+    
+    -- Try to get temperature from station forecast (first hour) for consistency
+    if primaryStationId and stationForecasts[tostring(primaryStationId)] then
+        local stationHourly = stationForecasts[tostring(primaryStationId)].hourly
+        if stationHourly and stationHourly[1] then
+            currentTemp = stationHourly[1].temperature
+        end
+    elseif latestData and latestData.data then
+        -- Fallback to calculating from weather data
         currentTemp = forecast.getTemperatureCelsius(latestData.data)
     end
     
@@ -820,9 +834,11 @@ function forecast.generate(historyData, latestData, allStationsData)
         generatedAt = os.epoch("utc"),
         gameTime = os.time(),
         gameDay = gameDay,
+        currentHour = currentHour,
         season = forecast.getSeasonName(gameDay),
         current = {
             state = currentState,
+            stationId = primaryStationId,
             data = latestData and deepCopy(latestData.data) or nil,
             rainChance = currentRainChance,
             thunderChance = currentThunderChance,

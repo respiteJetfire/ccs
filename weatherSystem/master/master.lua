@@ -2,7 +2,7 @@
 -- Weather Master Controller
 -- Receives data from stations, stores in DB, generates forecasts
 -- Now with per-station temperature forecasting and weather control via commands API
-local version = "3.2.0"
+local version = "3.3.0"
 
 print("[INFO] Weather Master v" .. version .. " starting...")
 
@@ -123,6 +123,10 @@ local function updateForecast()
     local stations = db.getActiveStations()
     if #stations > 0 then
         latestData = db.getLatestWeatherByStation(stations[1].id)
+        -- Add station ID to latestData so forecast can track it
+        if latestData then
+            latestData.stationId = stations[1].id
+        end
     end
     
     -- Get weather data for all stations (for per-station forecasts)
@@ -131,27 +135,15 @@ local function updateForecast()
     -- Generate forecast with all station data for per-station temperature forecasting
     currentForecast = forecast.generate(historyData, latestData, allStationsData)
     
-    -- Calculate Celsius temperature and humidity, add to forecast data
-    if currentForecast.current and currentForecast.current.data then
-        local tempC = forecast.getTemperatureCelsius(currentForecast.current.data)
-        currentForecast.current.data.temperatureCelsius = tempC
-        
-        local humidity = forecast.getHumidityPercent(currentForecast.current.data)
-        currentForecast.current.data.humidityPercent = humidity
-        
-        -- Track which station this data came from
-        if #stations > 0 then
-            currentForecast.current.stationId = stations[1].id
-        end
-    end
-    
+    -- The forecast.generate now handles temperature from station forecasts
+    -- Just log the values
     db.saveForecast(currentForecast)
     
     print("[FORECAST] Updated: " .. currentForecast.summary)
     print("[FORECAST] Season: " .. (currentForecast.season or "Unknown"))
-    if currentForecast.current and currentForecast.current.data then
-        print("[FORECAST] Temperature: " .. tostring(currentForecast.current.data.temperatureCelsius) .. "C")
-        print("[FORECAST] Humidity: " .. tostring(currentForecast.current.data.humidityPercent) .. "%")
+    if currentForecast.current then
+        print("[FORECAST] Temperature: " .. tostring(currentForecast.current.temperature) .. "C")
+        print("[FORECAST] Rain chance: " .. tostring(currentForecast.current.rainChance or 0) .. "%")
     end
     if currentForecast.current then
         print("[FORECAST] Rain chance: " .. tostring(currentForecast.current.rainChance or 0) .. "%")

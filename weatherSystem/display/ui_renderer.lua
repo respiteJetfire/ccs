@@ -1,6 +1,6 @@
 -- weatherSystem/display/ui_renderer.lua
 -- UI Renderer for Weather Display with 24-hour and 5-day forecasts
-local version = "3.2.0"
+local version = "3.3.0"
 
 local renderer = {}
 
@@ -144,8 +144,8 @@ function renderer.drawProgressBar(x, y, width, value, maxValue, fgColor, bgColor
     monitor.write(string.rep(" ", width - filled))
 end
 
--- Draw current conditions page
-function renderer.drawCurrentPage(forecast, stations)
+-- Draw current conditions page (now uses station-specific forecast data)
+function renderer.drawCurrentPage(forecast, stations, stationWeather, selectedStationId)
     if not forecast or not forecast.current then
         renderer.drawCenteredText(10, "No weather data available", assets.colors.textWarning)
         return
@@ -154,6 +154,39 @@ function renderer.drawCurrentPage(forecast, stations)
     local current = forecast.current
     local state = current.state or "clear"
     local weatherColor = assets.getWeatherColor(state)
+    
+    -- Try to get station-specific data
+    local stationId = selectedStationId or current.stationId
+    local stationData = nil
+    local stationForecast = nil
+    
+    if stationId then
+        -- Get station weather data
+        if stationWeather and stationWeather[tostring(stationId)] then
+            stationData = stationWeather[tostring(stationId)].data
+        end
+        -- Get station forecast for consistent temperature
+        if forecast.stationForecasts and forecast.stationForecasts[tostring(stationId)] then
+            stationForecast = forecast.stationForecasts[tostring(stationId)]
+        end
+    end
+    
+    -- Use station data if available, otherwise fall back to current.data
+    local data = stationData or current.data
+    
+    -- Get temperature from station's first forecast hour for consistency
+    local tempC = current.temperature or 15
+    if stationForecast and stationForecast.hourly and stationForecast.hourly[1] then
+        tempC = stationForecast.hourly[1].temperature
+    elseif data and data.temperatureCelsius then
+        tempC = data.temperatureCelsius
+    end
+    
+    -- Get rain chance from station forecast
+    local rainChance = current.rainChance or 15
+    if stationForecast and stationForecast.hourly and stationForecast.hourly[1] then
+        rainChance = stationForecast.hourly[1].rainChance
+    end
     
     -- Draw large icon
     renderer.drawLargeIcon(3, 6, state, weatherColor)
@@ -167,13 +200,10 @@ function renderer.drawCurrentPage(forecast, stations)
     local stateStr = state:sub(1,1):upper() .. state:sub(2)
     renderer.drawText(startX, 7, "Weather: " .. stateStr, weatherColor, assets.colors.background)
     
-    if current.data then
-        local data = current.data
-        
-        -- Temperature
-        local tempC = data.temperatureCelsius or current.temperature or 15
-        renderer.drawTemperature(startX, 8, tempC, "Temp")
-        
+    -- Temperature (from forecast for consistency)
+    renderer.drawTemperature(startX, 8, tempC, "Temp")
+    
+    if data then
         -- Humidity
         local humidityValue = data.humidityPercent or (data.humidity and data.humidity * 100) or 50
         renderer.drawText(startX, 9, "Humidity: " .. string.format("%.0f%%", humidityValue), 
@@ -202,11 +232,9 @@ function renderer.drawCurrentPage(forecast, stations)
             statusY = statusY + 1
         end
         
-        -- Rain chance
-        if current.rainChance then
-            renderer.drawText(startX, statusY, "Rain chance: " .. tostring(current.rainChance) .. "%", 
-                assets.colors.textSecondary, assets.colors.background)
-        end
+        -- Rain chance (from forecast)
+        renderer.drawText(startX, statusY, "Rain chance: " .. tostring(rainChance) .. "%", 
+            assets.colors.textSecondary, assets.colors.background)
     end
     
     -- Season display
@@ -437,7 +465,7 @@ function renderer.renderPage(forecast, stations, page, stationIndex, stationWeat
     end
     
     if page == "current" then
-        renderer.drawCurrentPage(forecast, stations)
+        renderer.drawCurrentPage(forecast, stations, stationWeather, selectedStationId)
     elseif page == "hourly" then
         renderer.draw24HourPage(forecast, selectedStationId)
     elseif page == "fiveday" then
@@ -447,12 +475,12 @@ function renderer.renderPage(forecast, stations, page, stationIndex, stationWeat
     elseif page == "stations" then
         renderer.drawStationsPage(stations, stationIndex, stationWeather, forecast)
     else
-        renderer.drawCurrentPage(forecast, stations)
+        renderer.drawCurrentPage(forecast, stations, stationWeather, selectedStationId)
     end
     
     -- Footer with station count
     local stationCount = stations and #stations or 0
-    renderer.drawFooter("Day " .. tostring(os.day()) .. " | " .. stationCount .. " Station(s) | v3.2")
+    renderer.drawFooter("Day " .. tostring(os.day()) .. " | " .. stationCount .. " Station(s) | v3.3")
 end
 
 -- Full screen render (legacy)
