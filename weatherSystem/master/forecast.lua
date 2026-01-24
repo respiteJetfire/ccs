@@ -302,8 +302,19 @@ local function getCurrentState(latestData)
     return forecast.WEATHER_STATES.CLEAR
 end
 
+-- Get time of day symbol
+local function getTimeSymbol(gameTime)
+    local hour = math.floor(gameTime / forecast.TICKS_PER_HOUR) % 24
+    -- Day: 6-18, Night: 18-6
+    if hour >= 6 and hour < 18 then
+        return "Day", "sun"
+    else
+        return "Night", "moon"
+    end
+end
+
 -- Convert hourly forecasts to legacy prediction format
-local function convertToLegacyPredictions(hourlyForecasts, currentTemp)
+local function convertToLegacyPredictions(hourlyForecasts, currentTemp, currentGameTime)
     local predictions = {}
     local baseTemp = currentTemp or 15
     
@@ -318,18 +329,21 @@ local function convertToLegacyPredictions(hourlyForecasts, currentTemp)
         local rainSum = 0
         local thunderSum = 0
         local count = 0
+        local avgHour = 0
         
         for _, h in ipairs(period.hours) do
             local hf = hourlyForecasts[h]
             if hf then
                 rainSum = rainSum + hf.rainChance
                 thunderSum = thunderSum + hf.thunderChance
+                avgHour = avgHour + hf.hour
                 count = count + 1
             end
         end
         
         local avgRain = count > 0 and (rainSum / count) or 15
         local avgThunder = count > 0 and (thunderSum / count) or 0
+        avgHour = count > 0 and math.floor(avgHour / count) or 12
         
         local state = forecast.WEATHER_STATES.CLEAR
         if avgThunder > 25 then
@@ -352,6 +366,10 @@ local function convertToLegacyPredictions(hourlyForecasts, currentTemp)
             tempVariation = tempVariation - math.random(3, 7)
         end
         
+        -- Get time of day for this prediction
+        local futureTime = (currentGameTime + (period.hours[1] or 0) * forecast.TICKS_PER_HOUR) % forecast.TICKS_PER_DAY
+        local timeOfDay, timeSymbol = getTimeSymbol(futureTime)
+        
         table.insert(predictions, {
             period = i,
             periodName = period.name,
@@ -359,7 +377,10 @@ local function convertToLegacyPredictions(hourlyForecasts, currentTemp)
             confidence = confidence,
             rainChance = math.floor(avgRain),
             thunderChance = math.floor(avgThunder),
-            temperature = baseTemp + tempVariation
+            temperature = baseTemp + tempVariation,
+            timeOfDay = timeOfDay,
+            timeSymbol = timeSymbol,
+            hour = avgHour
         })
     end
     
@@ -415,7 +436,7 @@ function forecast.generate(historyData, latestData)
     end
     
     -- Convert to legacy prediction format for display compatibility
-    local predictions = convertToLegacyPredictions(hourlyForecasts, currentTemp)
+    local predictions = convertToLegacyPredictions(hourlyForecasts, currentTemp, gameTime)
     
     -- Get current rain chance from hourly forecast
     local currentRainChance = hourlyForecasts[0] and hourlyForecasts[0].rainChance or 15

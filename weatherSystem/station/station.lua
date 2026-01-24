@@ -1,6 +1,6 @@
 -- weatherSystem/station/station.lua
 -- Weather Station - Collects weather data and sends to master
-local version = "1.1.0"
+local version = "2.0.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 

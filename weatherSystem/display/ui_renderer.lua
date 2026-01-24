@@ -1,6 +1,6 @@
 -- weatherSystem/display/ui_renderer.lua
 -- UI Renderer for Weather Display
-local version = "2.0.0"
+local version = "2.1.0"
 
 local renderer = {}
 
@@ -231,8 +231,9 @@ function renderer.drawForecastPage(forecast)
         local color = assets.getWeatherColor(pred.state)
         local stateStr = pred.state and (pred.state:sub(1,1):upper() .. pred.state:sub(2)) or "Unknown"
         
-        -- Period name
-        renderer.drawText(2, y, pred.periodName .. ":", assets.colors.textHighlight, assets.colors.background)
+        -- Period name with time of day
+        local timeIndicator = pred.timeOfDay and (" (" .. pred.timeOfDay .. ")") or ""
+        renderer.drawText(2, y, pred.periodName .. timeIndicator .. ":", assets.colors.textHighlight, assets.colors.background)
         y = y + 1
         
         -- Weather state and icon

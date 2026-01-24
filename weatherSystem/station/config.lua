@@ -1,11 +1,11 @@
 -- weatherSystem/station/config.lua
 -- Configuration for Weather Station
-local version = "1.1.0"
+local version = "2.0.0"
 
 local config = {
     -- Station identification
     STATION_ID = os.getComputerID(),
-    STATION_NAME = "Weather Station " .. tostring(os.getComputerID()),
+    STATION_NAME = nil,  -- Will be set in load()
     CUSTOM_NAME = nil,  -- Set to a string to use custom name instead of default
     
     -- Network settings
@@ -32,6 +32,18 @@ local config = {
 
 -- Function to load custom config from file
 function config.load()
+    -- Set default name first
+    if not config.STATION_NAME then
+        config.STATION_NAME = "Weather Station " .. tostring(config.STATION_ID)
+    end
+    
+    -- Create default config file if it doesn't exist
+    if not fs.exists("weatherSystem/station/station_config.json") then
+        print("[CONFIG] Creating default configuration file...")
+        config.save()
+    end
+    
+    -- Load config file
     if fs.exists("weatherSystem/station/station_config.json") then
         local file = fs.open("weatherSystem/station/station_config.json", "r")
         if file then
@@ -47,7 +59,7 @@ function config.load()
         end
     end
     
-    -- Apply custom name if set
+    -- Apply custom name if set (takes priority)
     if config.CUSTOM_NAME and config.CUSTOM_NAME ~= "" then
         config.STATION_NAME = config.CUSTOM_NAME
         print("[CONFIG] Using custom name: " .. config.STATION_NAME)

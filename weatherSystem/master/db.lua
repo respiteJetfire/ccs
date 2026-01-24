@@ -1,6 +1,6 @@
 -- weatherSystem/master/db.lua
 -- Persistent storage for Weather Master
-local version = "1.0.0"
+local version = "2.0.1"
 
 local db = {}
 
@@ -53,8 +53,15 @@ function db.init()
     stations = loadFile(STATIONS_FILE) or {}
     weatherHistory = loadFile(WEATHER_FILE) or {}
     forecasts = loadFile(FORECAST_FILE) or {}
+    
+    -- Count stations properly (table with string keys)
+    local stationCount = 0
+    for _ in pairs(stations) do
+        stationCount = stationCount + 1
+    end
+    
     print("[DB] Database initialized")
-    print("[DB] Loaded " .. tostring(#stations) .. " stations")
+    print("[DB] Loaded " .. tostring(stationCount) .. " stations")
     print("[DB] Loaded " .. tostring(#weatherHistory) .. " weather records")
 end
 
