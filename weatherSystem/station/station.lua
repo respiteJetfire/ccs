@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.1.2 - Biome detector, forecast display with station cycling
+-- Weather Station v6.2.0 - Biome detector, forecast display with animated weather
 -- Master handles all forecasting - station registers and displays
-local version = "6.1.2"
+local version = "6.2.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -322,6 +322,9 @@ local function displayLoop()
             
             -- Render page
             renderer.renderPage(displayForecast, allStations, currentPage, displayStationIndex, otherStation, otherStationForecast)
+            
+            -- Advance animation frame
+            assets.nextFrame()
         else
             -- Offline screen
             renderer.clear()
@@ -331,7 +334,7 @@ local function displayLoop()
             renderer.drawCenteredText(12, "Waiting for master...", assets.colors.textSecondary)
             renderer.drawFooter("No forecast data")
         end
-        sleep(3)
+        sleep(1)  -- Faster refresh for animations
     end
 end
 

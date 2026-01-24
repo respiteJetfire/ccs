@@ -1,8 +1,11 @@
 -- weatherSystem/station/ui_assets.lua
--- UI Assets v6.1.2 - Icons, Colors, and Weather Symbols
-local version = "6.1.2"
+-- UI Assets v6.2.0 - Icons, Colors, Weather Symbols with Animations
+local version = "6.2.0"
 
 local assets = {}
+
+-- Animation frame counter (global)
+assets.animFrame = 0
 
 -- Color palette
 assets.colors = {
@@ -42,13 +45,13 @@ assets.colors = {
 
 -- Weather symbols (single character for compact display)
 assets.symbols = {
-    clear = "*",      -- Sun/star
-    cloudy = "#",     -- Cloud block
-    rain = "/",       -- Rain drops
-    storm = "!",      -- Storm
-    thunder = "!",    -- Lightning
-    snow = "*",       -- Snowflake
-    fog = "=",        -- Fog lines
+    clear = "*",
+    cloudy = "#",
+    rain = "/",
+    storm = "!",
+    thunder = "!",
+    snow = "*",
+    fog = "=",
     partlycloudy = "~",
     lightrain = "/",
     heavyrain = "!",
@@ -57,7 +60,220 @@ assets.symbols = {
     unknown = "?"
 }
 
--- ASCII art icons (3x3)
+-- Animated weather symbols (multiple frames)
+assets.animatedSymbols = {
+    clear = {"*", "+", "*", "+"},           -- Twinkling sun
+    cloudy = {"#", "#", "~", "~"},           -- Drifting clouds
+    partlycloudy = {"~", ".", "~", "."},     -- Passing clouds
+    rain = {"/", "\\", "/", "\\"},           -- Falling rain
+    lightrain = {"'", ",", "'", ","},        -- Light drops
+    heavyrain = {"/", "|", "\\", "|"},       -- Heavy rain
+    storm = {"!", "/", "!", "\\"},           -- Stormy
+    thunder = {"!", "*", "!", "#"},          -- Lightning flash
+    snow = {"*", "o", "+", "o"},             -- Falling snow
+    lightsnow = {".", "*", ".", "+"},        -- Light snow
+    blizzard = {"*", "#", "*", "#"},         -- Heavy snow
+    fog = {"=", "-", "=", "-"},              -- Fog shifting
+    unknown = {"?", "?", "?", "?"}
+}
+
+-- Get current animation frame for a weather state
+function assets.getAnimatedSymbol(state)
+    local frames = assets.animatedSymbols[state] or assets.animatedSymbols.unknown
+    local frameIndex = (assets.animFrame % #frames) + 1
+    return frames[frameIndex]
+end
+
+-- Advance animation frame
+function assets.nextFrame()
+    assets.animFrame = assets.animFrame + 1
+end
+
+-- Animated large icons (5 frames each)
+assets.animatedLargeIcons = {
+    clear = {
+        {  -- Frame 1
+            "  \\   |   /  ",
+            "   \\  |  /   ",
+            "--- (   ) ---",
+            "   /  |  \\   ",
+            "  /   |   \\  "
+        },
+        {  -- Frame 2
+            "   \\  |  /   ",
+            "    \\ | /    ",
+            "--- ( * ) ---",
+            "    / | \\    ",
+            "   /  |  \\   "
+        },
+        {  -- Frame 3
+            "  \\   |   /  ",
+            "   \\  |  /   ",
+            "--- (   ) ---",
+            "   /  |  \\   ",
+            "  /   |   \\  "
+        },
+        {  -- Frame 4
+            " \\    |    / ",
+            "  \\   |   /  ",
+            "--- (   ) ---",
+            "  /   |   \\  ",
+            " /    |    \\ "
+        }
+    },
+    cloudy = {
+        {
+            "     ___     ",
+            "   _(   )_   ",
+            "  (_     _)  ",
+            " (__     __) ",
+            "(__________) "
+        },
+        {
+            "      ___    ",
+            "    _(   )_  ",
+            "   (_     _) ",
+            "  (__     __)",
+            " (__________)"
+        },
+        {
+            "     ___     ",
+            "   _(   )_   ",
+            "  (_     _)  ",
+            " (__     __) ",
+            "(__________) "
+        },
+        {
+            "    ___      ",
+            "  _(   )_    ",
+            " (_     _)   ",
+            "(__     __)  ",
+            "(__________) "
+        }
+    },
+    rain = {
+        {
+            "    ____     ",
+            "  (      )   ",
+            " (________)  ",
+            "  / / / / /  ",
+            "   / / / /   "
+        },
+        {
+            "    ____     ",
+            "  (      )   ",
+            " (________)  ",
+            "   / / / /   ",
+            "  / / / / /  "
+        },
+        {
+            "    ____     ",
+            "  (      )   ",
+            " (________)  ",
+            "  ' ' ' ' '  ",
+            " / / / / / / "
+        },
+        {
+            "    ____     ",
+            "  (      )   ",
+            " (________)  ",
+            " / / / / / / ",
+            "  ' ' ' ' '  "
+        }
+    },
+    storm = {
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (________)  ",
+            " /////////// ",
+            "/////////// "
+        },
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (________)  ",
+            "/////////// ",
+            " /////////// "
+        },
+        {
+            "   _____     ",
+            "  (  *  )    ",
+            " (___/|___)  ",
+            " /////////|  ",
+            "/////////// "
+        },
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (________)  ",
+            " |\\\\\\\\\\\\\\\\\\  ",
+            "/////////// "
+        }
+    },
+    thunder = {
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (__/|___)   ",
+            "    /|       ",
+            "   /         "
+        },
+        {
+            "   _____     ",
+            "  (* * *)    ",
+            " (____|__)   ",
+            "    |/       ",
+            "   /         "
+        },
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (__|\\__)    ",
+            "    |\\       ",
+            "     \\       "
+        },
+        {
+            "  **_____**  ",
+            " *(     )*   ",
+            " (__/|___)   ",
+            "   */|*      ",
+            "   /   *     "
+        }
+    },
+    snow = {
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (________)  ",
+            " *  *  *  *  ",
+            "  *  *  *  * "
+        },
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (________)  ",
+            "  *  *  *  * ",
+            " *  *  *  *  "
+        },
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (________)  ",
+            " +  +  +  +  ",
+            "  o  o  o  o "
+        },
+        {
+            "   _____     ",
+            "  (     )    ",
+            " (________)  ",
+            "  o  o  o  o ",
+            " +  +  +  +  "
+        }
+    }
+}
+
+-- ASCII art icons (3x3) - static fallback
 assets.icons = {
     sun = {
         " \\|/ ",

@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.1.2 - Weather display with symbols, colors, station cycling
-local version = "6.1.2"
+-- UI Renderer v6.2.0 - Weather display with animated symbols and station cycling
+local version = "6.2.0"
 
 local renderer = {}
 
@@ -86,9 +86,19 @@ function renderer.drawFooter(text)
     renderer.drawCenteredText(y, text, assets.colors.textSecondary, assets.colors.footerBg)
 end
 
--- Draw large weather icon
+-- Draw large weather icon (animated)
 function renderer.drawLargeIcon(x, y, state, color)
-    local icon = assets.getLargeIcon(state)
+    local icon = nil
+    
+    -- Try to get animated icon first
+    if assets.animatedLargeIcons and assets.animatedLargeIcons[state] then
+        local frames = assets.animatedLargeIcons[state]
+        local frameIndex = (assets.animFrame % #frames) + 1
+        icon = frames[frameIndex]
+    else
+        icon = assets.getLargeIcon(state)
+    end
+    
     color = color or assets.getWeatherColor(state)
     
     for i, line in ipairs(icon) do
@@ -210,9 +220,9 @@ function renderer.draw24HourPage(forecast)
                 local hourStr = string.format("%02d:00", hourForecast.hour)
                 renderer.drawText(x, rowY, hourStr, assets.colors.textSecondary, assets.colors.background)
                 
-                -- Weather symbol with color - convert based on biome
+                -- Weather symbol with color - convert based on biome (animated)
                 local state = assets.convertWeatherForBiome(hourForecast.predictedState or "clear", biome)
-                local symbol = assets.getWeatherSymbol(state)
+                local symbol = assets.getAnimatedSymbol(state)
                 local color = assets.getWeatherColor(state)
                 renderer.drawText(x, rowY + 1, symbol .. symbol .. symbol, color, assets.colors.background)
                 
@@ -266,9 +276,9 @@ function renderer.draw5DayPage(forecast)
             end
             renderer.drawText(x, y, dayName, assets.colors.textHighlight, assets.colors.background)
             
-            -- Weather symbol row - convert based on biome
+            -- Weather symbol row - convert based on biome (animated)
             local state = assets.convertWeatherForBiome(dayForecast.predictedState or "clear", biome)
-            local symbol = assets.getWeatherSymbol(state)
+            local symbol = assets.getAnimatedSymbol(state)
             local color = assets.getWeatherColor(state)
             renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, assets.colors.background)
             
@@ -364,9 +374,9 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
             end
             
             if current then
-                -- Weather symbol - convert based on station's biome
+                -- Weather symbol - convert based on station's biome (animated)
                 local state = assets.convertWeatherForBiome(current.predictedState or "clear", stationBiome)
-                local symbol = assets.getWeatherSymbol(state)
+                local symbol = assets.getAnimatedSymbol(state)
                 local color = assets.getWeatherColor(state)
                 renderer.drawText(22, y, symbol .. symbol, color, assets.colors.background)
                 
@@ -491,9 +501,9 @@ function renderer.drawOtherStation5Day(forecast, station, stationForecast)
             end
             renderer.drawText(x, y, dayName, assets.colors.textHighlight, assets.colors.background)
             
-            -- Weather symbol row - convert based on biome
+            -- Weather symbol row - convert based on biome (animated)
             local state = assets.convertWeatherForBiome(dayForecast.predictedState or "clear", biome)
-            local symbol = assets.getWeatherSymbol(state)
+            local symbol = assets.getAnimatedSymbol(state)
             local color = assets.getWeatherColor(state)
             renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, assets.colors.background)
             
