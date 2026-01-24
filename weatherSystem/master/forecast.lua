@@ -1,8 +1,13 @@
 -- weatherSystem/master/forecast.lua
--- Weather Forecast Logic
-local version = "1.2.0"
+-- Weather Forecast Logic with Hourly Predictions and Weather Control
+local version = "2.0.0"
 
 local forecast = {}
+
+-- Minecraft time constants
+forecast.TICKS_PER_HOUR = 1000      -- 1000 ticks = 1 MC hour
+forecast.TICKS_PER_DAY = 24000      -- 24000 ticks = 1 MC day
+forecast.HOURS_PER_DAY = 24
 
 -- Weather states
 forecast.WEATHER_STATES = {
@@ -20,156 +25,353 @@ forecast.CONFIDENCE = {
     LOW = "low"
 }
 
--- Analyze weather trend from historical data
-local function analyzeTrend(historyData)
-    if not historyData or #historyData < 2 then
+-- Global weather state (same for all stations)
+local globalWeatherState = {
+    isRaining = false,
+    isThundering = false,
+    rainStartTick = 0,
+    rainDuration = 0,        -- Duration in ticks
+    nextWeatherCheck = 0,    -- Next tick to check for weather change
+    currentRainChance = 15,  -- Base 15% chance per hour
+    hourlyForecasts = {}     -- Forecasts for next 24 hours
+}
+
+-- Seasonal/time-based rain probability modifiers
+local function getSeasonalRainModifier(gameDay)
+    -- Simulate seasons over a 120-day cycle
+    local seasonLength = 30
+    local dayInCycle = gameDay % 120
+    
+    if dayInCycle < seasonLength then
+        -- Spring: higher rain chance
+        return 1.4
+    elseif dayInCycle < seasonLength * 2 then
+        -- Summer: moderate, with chance of storms
+        return 0.9
+    elseif dayInCycle < seasonLength * 3 then
+        -- Autumn: moderate rain
+        return 1.2
+    else
+        -- Winter: lower rain (snow in cold biomes)
+        return 0.7
+    end
+end
+
+-- Get time-of-day rain modifier
+local function getTimeOfDayModifier(gameTime)
+    local hour = math.floor(gameTime / forecast.TICKS_PER_HOUR) % 24
+    
+    -- Rain more likely in early morning (4-8) and evening (16-20)
+    if hour >= 4 and hour <= 8 then
+        return 1.3
+    elseif hour >= 16 and hour <= 20 then
+        return 1.25
+    elseif hour >= 12 and hour <= 14 then
+        -- Less likely at midday
+        return 0.7
+    end
+    return 1.0
+end
+
+-- Calculate rain probability for a specific hour
+function forecast.calculateHourlyRainChance(gameDay, hour, previousHourRaining)
+    local baseChance = 15  -- 15% base chance
+    
+    -- Apply modifiers
+    local seasonMod = getSeasonalRainModifier(gameDay)
+    local timeMod = getTimeOfDayModifier(hour * forecast.TICKS_PER_HOUR)
+    
+    -- Weather persistence: if it was raining, higher chance to continue
+    local persistenceMod = 1.0
+    if previousHourRaining then
+        persistenceMod = 2.5  -- 2.5x more likely to continue raining
+    end
+    
+    -- Weather front simulation: random pressure system
+    local pressureMod = 0.8 + math.random() * 0.4  -- 0.8 to 1.2
+    
+    local finalChance = baseChance * seasonMod * timeMod * persistenceMod * pressureMod
+    
+    -- Clamp between 5% and 85%
+    return math.max(5, math.min(85, math.floor(finalChance)))
+end
+
+-- Calculate thunder probability (only when raining)
+function forecast.calculateThunderChance(rainChance, gameDay)
+    if rainChance < 30 then return 0 end
+    
+    -- Thunder is rarer, mostly in summer
+    local seasonLength = 30
+    local dayInCycle = gameDay % 120
+    
+    local thunderBase = 10
+    if dayInCycle >= seasonLength and dayInCycle < seasonLength * 2 then
+        -- Summer: much higher thunder chance
+        thunderBase = 35
+    end
+    
+    -- Thunder more likely with heavy rain
+    local intensityMod = rainChance / 50
+    
+    return math.floor(thunderBase * intensityMod)
+end
+
+-- Generate hourly forecasts for next 24 hours
+function forecast.generateHourlyForecasts(currentGameTime, gameDay)
+    local forecasts = {}
+    local currentHour = math.floor(currentGameTime / forecast.TICKS_PER_HOUR) % 24
+    local wasRaining = globalWeatherState.isRaining
+    
+    for i = 0, 23 do
+        local forecastHour = (currentHour + i) % 24
+        local forecastDay = gameDay + math.floor((currentHour + i) / 24)
+        
+        local rainChance = forecast.calculateHourlyRainChance(forecastDay, forecastHour, wasRaining)
+        local thunderChance = forecast.calculateThunderChance(rainChance, forecastDay)
+        
+        -- Determine predicted state
+        local willRain = math.random(100) <= rainChance
+        local willThunder = willRain and math.random(100) <= thunderChance
+        
+        local state = forecast.WEATHER_STATES.CLEAR
+        if willThunder then
+            state = forecast.WEATHER_STATES.THUNDER
+        elseif willRain then
+            if rainChance > 60 then
+                state = forecast.WEATHER_STATES.STORM
+            else
+                state = forecast.WEATHER_STATES.RAIN
+            end
+        elseif rainChance > 40 then
+            state = forecast.WEATHER_STATES.CLOUDY
+        end
+        
+        -- Confidence based on how far out the prediction is
+        local confidence = forecast.CONFIDENCE.HIGH
+        if i > 12 then
+            confidence = forecast.CONFIDENCE.LOW
+        elseif i > 6 then
+            confidence = forecast.CONFIDENCE.MEDIUM
+        end
+        
+        forecasts[i] = {
+            hour = forecastHour,
+            hoursFromNow = i,
+            day = forecastDay,
+            rainChance = rainChance,
+            thunderChance = thunderChance,
+            predictedState = state,
+            willRain = willRain,
+            willThunder = willThunder,
+            confidence = confidence
+        }
+        
+        wasRaining = willRain
+    end
+    
+    globalWeatherState.hourlyForecasts = forecasts
+    return forecasts
+end
+
+-- Check and apply weather changes using commands API
+function forecast.checkAndApplyWeather(currentTick, gameDay)
+    -- Only check once per hour (1000 ticks)
+    if currentTick < globalWeatherState.nextWeatherCheck then
         return nil
     end
     
-    local rainCount = 0
-    local thunderCount = 0
-    local tempSum = 0
-    local humiditySum = 0
+    globalWeatherState.nextWeatherCheck = currentTick + forecast.TICKS_PER_HOUR
     
-    for _, record in ipairs(historyData) do
-        if record.data then
-            if record.data.isRaining then rainCount = rainCount + 1 end
-            if record.data.isThundering then thunderCount = thunderCount + 1 end
-            tempSum = tempSum + (record.data.temperature or 0)
-            humiditySum = humiditySum + (record.data.humidity or 0)
-        end
+    local currentHour = math.floor(currentTick / forecast.TICKS_PER_HOUR) % 24
+    local hourForecast = globalWeatherState.hourlyForecasts[0]  -- Current hour
+    
+    if not hourForecast then
+        -- Generate new forecasts if needed
+        forecast.generateHourlyForecasts(currentTick, gameDay)
+        hourForecast = globalWeatherState.hourlyForecasts[0]
     end
     
-    local count = #historyData
+    local weatherChanged = false
+    local newState = nil
+    local command = nil
+    
+    -- Roll for weather change based on forecast
+    local roll = math.random(100)
+    local shouldRain = roll <= hourForecast.rainChance
+    local shouldThunder = shouldRain and math.random(100) <= hourForecast.thunderChance
+    
+    -- Determine if weather state needs to change
+    if shouldThunder and not globalWeatherState.isThundering then
+        command = "weather thunder"
+        globalWeatherState.isRaining = true
+        globalWeatherState.isThundering = true
+        newState = forecast.WEATHER_STATES.THUNDER
+        weatherChanged = true
+    elseif shouldRain and not globalWeatherState.isRaining then
+        command = "weather rain"
+        globalWeatherState.isRaining = true
+        globalWeatherState.isThundering = false
+        newState = forecast.WEATHER_STATES.RAIN
+        weatherChanged = true
+    elseif not shouldRain and globalWeatherState.isRaining then
+        command = "weather clear"
+        globalWeatherState.isRaining = false
+        globalWeatherState.isThundering = false
+        newState = forecast.WEATHER_STATES.CLEAR
+        weatherChanged = true
+    elseif globalWeatherState.isThundering and not shouldThunder and shouldRain then
+        -- Downgrade from thunder to rain
+        command = "weather rain"
+        globalWeatherState.isThundering = false
+        newState = forecast.WEATHER_STATES.RAIN
+        weatherChanged = true
+    end
+    
+    -- Execute command if available
+    if command and commands then
+        local success, result = pcall(function()
+            return commands.exec(command)
+        end)
+        if success then
+            print("[WEATHER] Executed: " .. command)
+        else
+            print("[WEATHER] Command API not available or failed: " .. tostring(result))
+        end
+    elseif command then
+        print("[WEATHER] Would execute: " .. command .. " (commands API not available)")
+    end
+    
+    -- Regenerate forecasts after weather change
+    if weatherChanged then
+        forecast.generateHourlyForecasts(currentTick, gameDay)
+    end
+    
     return {
-        rainProbability = rainCount / count,
-        thunderProbability = thunderCount / count,
-        avgTemperature = tempSum / count,
-        avgHumidity = humiditySum / count,
-        sampleCount = count
+        changed = weatherChanged,
+        command = command,
+        newState = newState,
+        currentRainChance = hourForecast.rainChance,
+        currentThunderChance = hourForecast.thunderChance
     }
 end
 
--- Determine current weather state
+-- Get global weather state
+function forecast.getGlobalWeatherState()
+    return {
+        isRaining = globalWeatherState.isRaining,
+        isThundering = globalWeatherState.isThundering,
+        currentRainChance = globalWeatherState.currentRainChance,
+        hourlyForecasts = globalWeatherState.hourlyForecasts
+    }
+end
+
+-- Set global weather state from station data (sync)
+function forecast.syncFromStationData(stationData)
+    if stationData then
+        globalWeatherState.isRaining = stationData.isRaining == true
+        globalWeatherState.isThundering = stationData.isThundering == true
+    end
+end
+
+-- Determine current weather state from global state or station data
 local function getCurrentState(latestData)
-    if not latestData or not latestData.data then
-        return forecast.WEATHER_STATES.CLEAR
-    end
-    
-    local data = latestData.data
-    
-    -- Check for thunder first (highest priority)
-    if data.isThundering == true or (data.thunderLevel and data.thunderLevel > 0.1) then
+    -- Use global weather state first (it's authoritative)
+    if globalWeatherState.isThundering then
         return forecast.WEATHER_STATES.THUNDER
-    end
-    
-    -- Check for rain
-    if data.isRaining == true or (data.rainLevel and data.rainLevel > 0.1) then
-        -- Check if it's a heavy storm
-        if (data.rainLevel and data.rainLevel > 0.7) or (data.humidity and data.humidity > 0.8) then
-            return forecast.WEATHER_STATES.STORM
-        end
+    elseif globalWeatherState.isRaining then
         return forecast.WEATHER_STATES.RAIN
     end
     
-    -- Check for cloudy conditions
-    if data.humidity and data.humidity > 0.6 then
-        return forecast.WEATHER_STATES.CLOUDY
+    -- Fall back to station data
+    if latestData and latestData.data then
+        local data = latestData.data
+        if data.isThundering == true then
+            return forecast.WEATHER_STATES.THUNDER
+        end
+        if data.isRaining == true then
+            if data.rainLevel and data.rainLevel > 0.7 then
+                return forecast.WEATHER_STATES.STORM
+            end
+            return forecast.WEATHER_STATES.RAIN
+        end
+        if data.humidity and data.humidity > 0.6 then
+            return forecast.WEATHER_STATES.CLOUDY
+        end
     end
     
     return forecast.WEATHER_STATES.CLEAR
 end
 
--- Predict future weather based on trends
-local function predictFuture(currentState, trend, currentTemp)
+-- Convert hourly forecasts to legacy prediction format
+local function convertToLegacyPredictions(hourlyForecasts, currentTemp)
     local predictions = {}
     local baseTemp = currentTemp or 15
     
-    -- Simple prediction model based on current conditions and trends
-    for i = 1, 3 do  -- Predict next 3 periods
-        local prediction = {
-            period = i,
-            periodName = i == 1 and "Short-term" or (i == 2 and "Mid-term" or "Long-term")
-        }
+    -- Convert to 3 periods: next 2 hours, next 6 hours, next 12 hours
+    local periods = {
+        {name = "Next 2 Hours", hours = {0, 1}},
+        {name = "Next 6 Hours", hours = {2, 3, 4, 5}},
+        {name = "Next 12 Hours", hours = {6, 7, 8, 9, 10, 11}}
+    }
+    
+    for i, period in ipairs(periods) do
+        local rainSum = 0
+        local thunderSum = 0
+        local count = 0
         
-        if trend then
-            -- Use trend data for predictions
-            if trend.rainProbability > 0.7 then
-                prediction.state = forecast.WEATHER_STATES.RAIN
-                prediction.confidence = forecast.CONFIDENCE.HIGH
-            elseif trend.rainProbability > 0.4 then
-                prediction.state = forecast.WEATHER_STATES.CLOUDY
-                prediction.confidence = forecast.CONFIDENCE.MEDIUM
-            else
-                prediction.state = forecast.WEATHER_STATES.CLEAR
-                prediction.confidence = forecast.CONFIDENCE.MEDIUM
+        for _, h in ipairs(period.hours) do
+            local hf = hourlyForecasts[h]
+            if hf then
+                rainSum = rainSum + hf.rainChance
+                thunderSum = thunderSum + hf.thunderChance
+                count = count + 1
             end
-            
-            if trend.thunderProbability > 0.5 then
-                prediction.state = forecast.WEATHER_STATES.THUNDER
-                prediction.confidence = forecast.CONFIDENCE.MEDIUM
-            end
-            
-            prediction.humidity = trend.avgHumidity
-        else
-            -- Fall back to current state continuation
-            prediction.state = currentState
-            prediction.confidence = forecast.CONFIDENCE.LOW
         end
         
-        -- Generate fake temperature forecast with variation
-        -- Short-term: +/- 2C, Mid-term: +/- 5C, Long-term: +/- 8C
+        local avgRain = count > 0 and (rainSum / count) or 15
+        local avgThunder = count > 0 and (thunderSum / count) or 0
+        
+        local state = forecast.WEATHER_STATES.CLEAR
+        if avgThunder > 25 then
+            state = forecast.WEATHER_STATES.THUNDER
+        elseif avgRain > 50 then
+            state = forecast.WEATHER_STATES.RAIN
+        elseif avgRain > 30 then
+            state = forecast.WEATHER_STATES.CLOUDY
+        end
+        
+        local confidence = forecast.CONFIDENCE.HIGH
+        if i == 2 then confidence = forecast.CONFIDENCE.MEDIUM
+        elseif i == 3 then confidence = forecast.CONFIDENCE.LOW end
+        
+        -- Temperature variation based on weather
         local tempVariation = math.random(-2 * i, 2 * i)
-        -- Rainy weather is cooler
-        if prediction.state == forecast.WEATHER_STATES.RAIN or prediction.state == forecast.WEATHER_STATES.STORM then
+        if state == forecast.WEATHER_STATES.RAIN then
             tempVariation = tempVariation - math.random(2, 5)
-        elseif prediction.state == forecast.WEATHER_STATES.THUNDER then
+        elseif state == forecast.WEATHER_STATES.THUNDER then
             tempVariation = tempVariation - math.random(3, 7)
         end
-        prediction.temperature = baseTemp + tempVariation
         
-        table.insert(predictions, prediction)
+        table.insert(predictions, {
+            period = i,
+            periodName = period.name,
+            state = state,
+            confidence = confidence,
+            rainChance = math.floor(avgRain),
+            thunderChance = math.floor(avgThunder),
+            temperature = baseTemp + tempVariation
+        })
     end
     
     return predictions
 end
 
--- Generate a complete forecast
-function forecast.generate(historyData, latestData)
-    local trend = analyzeTrend(historyData)
-    local currentState = getCurrentState(latestData)
-    
-    -- Calculate current temperature for prediction base
-    local currentTemp = 15
-    if latestData and latestData.data then
-        currentTemp = forecast.getTemperatureCelsius(latestData.data)
-    end
-    
-    local predictions = predictFuture(currentState, trend, currentTemp)
-    
-    local result = {
-        version = version,
-        generatedAt = os.epoch("utc"),
-        gameTime = os.time(),
-        gameDay = os.day(),
-        current = {
-            state = currentState,
-            data = latestData and latestData.data or nil
-        },
-        trend = trend,
-        predictions = predictions,
-        summary = forecast.generateSummary(currentState, predictions)
-    }
-    
-    return result
-end
-
 -- Generate human-readable summary
-function forecast.generateSummary(currentState, predictions)
+function forecast.generateSummary(currentState, predictions, hourlyForecasts)
     local stateDescriptions = {
         [forecast.WEATHER_STATES.CLEAR] = "Clear skies",
         [forecast.WEATHER_STATES.CLOUDY] = "Cloudy conditions",
-        [forecast.WEATHER_STATES.RAIN] = "Rain expected",
+        [forecast.WEATHER_STATES.RAIN] = "Rain",
         [forecast.WEATHER_STATES.STORM] = "Heavy storms",
         [forecast.WEATHER_STATES.THUNDER] = "Thunderstorms"
     }
@@ -177,14 +379,66 @@ function forecast.generateSummary(currentState, predictions)
     local current = stateDescriptions[currentState] or "Unknown conditions"
     local future = "Conditions expected to continue"
     
-    if predictions and #predictions > 0 then
-        local nextState = predictions[1].state
-        if nextState ~= currentState then
-            future = "Changing to " .. (stateDescriptions[nextState] or "different conditions")
+    -- Check next few hours for changes
+    if hourlyForecasts and hourlyForecasts[1] then
+        local nextHour = hourlyForecasts[1]
+        if nextHour.rainChance > 50 and currentState == forecast.WEATHER_STATES.CLEAR then
+            future = string.format("Rain likely (%d%% chance)", nextHour.rainChance)
+        elseif nextHour.rainChance < 30 and (currentState == forecast.WEATHER_STATES.RAIN or currentState == forecast.WEATHER_STATES.THUNDER) then
+            future = "Clearing expected"
+        elseif nextHour.thunderChance > 30 then
+            future = string.format("Thunderstorms possible (%d%%)", nextHour.thunderChance)
         end
     end
     
     return current .. ". " .. future .. "."
+end
+
+-- Generate a complete forecast (updated for v2.0)
+function forecast.generate(historyData, latestData)
+    local currentState = getCurrentState(latestData)
+    local gameTime = os.time() * 1000  -- Convert to ticks approximation
+    local gameDay = os.day()
+    
+    -- Sync global state from station data
+    if latestData and latestData.data then
+        forecast.syncFromStationData(latestData.data)
+    end
+    
+    -- Generate hourly forecasts
+    local hourlyForecasts = forecast.generateHourlyForecasts(gameTime, gameDay)
+    
+    -- Calculate current temperature for prediction base
+    local currentTemp = 15
+    if latestData and latestData.data then
+        currentTemp = forecast.getTemperatureCelsius(latestData.data)
+    end
+    
+    -- Convert to legacy prediction format for display compatibility
+    local predictions = convertToLegacyPredictions(hourlyForecasts, currentTemp)
+    
+    -- Get current rain chance from hourly forecast
+    local currentRainChance = hourlyForecasts[0] and hourlyForecasts[0].rainChance or 15
+    local currentThunderChance = hourlyForecasts[0] and hourlyForecasts[0].thunderChance or 0
+    
+    local result = {
+        version = version,
+        generatedAt = os.epoch("utc"),
+        gameTime = os.time(),
+        gameDay = gameDay,
+        current = {
+            state = currentState,
+            data = latestData and latestData.data or nil,
+            rainChance = currentRainChance,
+            thunderChance = currentThunderChance
+        },
+        globalWeather = forecast.getGlobalWeatherState(),
+        hourlyForecasts = hourlyForecasts,
+        predictions = predictions,
+        summary = forecast.generateSummary(currentState, predictions, hourlyForecasts)
+    }
+    
+    return result
 end
 
 -- Get weather icon for state

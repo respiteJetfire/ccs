@@ -40,12 +40,17 @@ local function updateScripts()
     local failed = 0
 
     for _, file in ipairs(filesToUpdate) do
-        if fs.exists(file.local_) then
-            fs.delete(file.local_)
-        end
-        if downloadFile(file.remote, file.local_) then
+        local tempPath = file.local_ .. ".tmp"
+        if downloadFile(file.remote, tempPath) then
+            if fs.exists(file.local_) then
+                fs.delete(file.local_)
+            end
+            fs.move(tempPath, file.local_)
             success = success + 1
         else
+            if fs.exists(tempPath) then
+                fs.delete(tempPath)
+            end
             failed = failed + 1
         end
     end

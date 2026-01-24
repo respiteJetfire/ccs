@@ -11,13 +11,19 @@ local function downloadFile(remotePath, localPath)
     local url = repo .. remotePath .. "?raw=true"
     local response = http.get(url)
     if response then
+        local dir = localPath:match("(.+)/[^/]+$")
+        if dir and not fs.exists(dir) then
+            fs.makeDir(dir)
+        end
         local file = fs.open(localPath, "w")
         file.write(response.readAll())
         file.close()
         response.close()
-        print("Updated: " .. localPath)
+        print("[OK] Updated: " .. localPath)
+        return true
     else
-        print("Failed to download: " .. remotePath)
+        print("[FAIL] Failed to download: " .. remotePath)
+        return false
     end
 end
 
@@ -31,11 +37,17 @@ local function updateScripts()
     }
 
     for _, file in ipairs(filesToUpdate) do
-        -- delete the local file if it already exists
-        if fs.exists(file.local_) then
-            fs.delete(file.local_)
+        local tempPath = file.local_ .. ".tmp"
+        if downloadFile(file.remote, tempPath) then
+            if fs.exists(file.local_) then
+                fs.delete(file.local_)
+            end
+            fs.move(tempPath, file.local_)
+        else
+            if fs.exists(tempPath) then
+                fs.delete(tempPath)
+            end
         end
-        downloadFile(file.remote, file.local_)
     end
 end
 

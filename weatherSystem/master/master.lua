@@ -1,9 +1,18 @@
 -- weatherSystem/master/master.lua
 -- Weather Master Controller
 -- Receives data from stations, stores in DB, generates forecasts
-local version = "1.2.1"
+-- Now with hourly forecasting and optional weather control via commands API
+local version = "2.0.0"
 
 print("[INFO] Weather Master v" .. version .. " starting...")
+
+-- Check for commands API (Command Computer)
+local hasCommandsAPI = commands ~= nil
+if hasCommandsAPI then
+    print("[INFO] Commands API detected - weather control ENABLED")
+else
+    print("[INFO] Commands API not available - forecast only mode")
+end
 
 -- Load modules (using dofile for reliability)
 local network = dofile("weatherSystem/master/api_network.lua")
@@ -15,6 +24,7 @@ local CONFIG = {
     FORECAST_INTERVAL = 60,   -- Generate forecast every 60 seconds
     BROADCAST_INTERVAL = 30,  -- Broadcast forecast every 30 seconds
     CLEANUP_INTERVAL = 3600,  -- Cleanup old data every hour
+    WEATHER_CHECK_INTERVAL = 50, -- Check weather every 50 seconds (~1 MC hour)
     HOSTNAME = "weather_master"
 }
 
@@ -115,6 +125,9 @@ local function updateForecast()
         print("[FORECAST] Temperature: " .. tostring(currentForecast.current.data.temperatureCelsius) .. "C")
         print("[FORECAST] Humidity: " .. tostring(currentForecast.current.data.humidityPercent) .. "%")
     end
+    if currentForecast.current then
+        print("[FORECAST] Rain chance: " .. tostring(currentForecast.current.rainChance or 0) .. "%")
+    end
     return currentForecast
 end
 
@@ -126,12 +139,15 @@ local function getStationWeather()
     for _, station in ipairs(stations) do
         local latest = db.getLatestWeatherByStation(station.id)
         if latest and latest.data then
+            -- Create a shallow copy to avoid shared table references
+            local dataCopy = {}
+            for k, v in pairs(latest.data) do
+                dataCopy[k] = v
+            end
             -- Add calculated values
-            local tempC = forecast.getTemperatureCelsius(latest.data)
-            local humidity = forecast.getHumidityPercent(latest.data)
-            latest.data.temperatureCelsius = tempC
-            latest.data.humidityPercent = humidity
-            stationWeather[tostring(station.id)] = latest
+            dataCopy.temperatureCelsius = forecast.getTemperatureCelsius(latest.data)
+            dataCopy.humidityPercent = forecast.getHumidityPercent(latest.data)
+            stationWeather[tostring(station.id)] = {data = dataCopy}
         end
     end
     
@@ -197,7 +213,35 @@ local function statusLoop()
     while true do
         sleep(60)
         local stations = db.getActiveStations()
+        local globalWeather = forecast.getGlobalWeatherState()
         print("[STATUS] Active stations: " .. tostring(#stations))
+        print("[STATUS] Global weather - Rain: " .. tostring(globalWeather.isRaining) .. ", Thunder: " .. tostring(globalWeather.isThundering))
+    end
+end
+
+-- Weather control loop (applies weather changes using commands API)
+local function weatherControlLoop()
+    if not hasCommandsAPI then
+        print("[WEATHER] Weather control disabled (no commands API)")
+        return  -- Exit loop if no commands API
+    end
+    
+    print("[WEATHER] Weather control loop started")
+    local lastTick = 0
+    
+    while true do
+        -- Approximate current tick from game time
+        local currentTick = os.time() * 1000
+        local gameDay = os.day()
+        
+        -- Check and apply weather
+        local result = forecast.checkAndApplyWeather(currentTick, gameDay)
+        if result and result.changed then
+            print("[WEATHER] Weather changed to: " .. tostring(result.newState))
+            print("[WEATHER] Rain chance was: " .. tostring(result.currentRainChance) .. "%")
+        end
+        
+        sleep(CONFIG.WEATHER_CHECK_INTERVAL)
     end
 end
 
@@ -210,7 +254,11 @@ print("[INFO] Press Ctrl+T to terminate")
 updateForecast()
 
 -- Run all loops in parallel
-parallel.waitForAny(receiveLoop, forecastLoop, broadcastLoop, cleanupLoop, statusLoop)
+if hasCommandsAPI then
+    parallel.waitForAny(receiveLoop, forecastLoop, broadcastLoop, cleanupLoop, statusLoop, weatherControlLoop)
+else
+    parallel.waitForAny(receiveLoop, forecastLoop, broadcastLoop, cleanupLoop, statusLoop)
+end
 
 -- Cleanup on exit
 db.saveAll()

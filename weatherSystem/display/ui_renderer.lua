@@ -1,6 +1,6 @@
 -- weatherSystem/display/ui_renderer.lua
 -- UI Renderer for Weather Display
-local version = "1.2.1"
+local version = "2.0.0"
 
 local renderer = {}
 
@@ -202,6 +202,12 @@ function renderer.drawCurrentPage(forecast, stations)
             renderer.drawText(startX, statusY, "* Raining" .. rainPct, assets.colors.rain, assets.colors.background)
             statusY = statusY + 1
         end
+        
+        -- Show rain chance from forecast
+        if current.rainChance then
+            renderer.drawText(startX, statusY, "Rain chance: " .. tostring(current.rainChance) .. "%", 
+                assets.colors.textSecondary, assets.colors.background)
+        end
     end
     
     -- Summary at bottom
@@ -233,6 +239,12 @@ function renderer.drawForecastPage(forecast)
         renderer.drawIcon(4, y, pred.state, color)
         renderer.drawText(12, y, stateStr, color, assets.colors.background)
         
+        -- Rain chance
+        if pred.rainChance then
+            renderer.drawText(24, y, "Rain: " .. tostring(pred.rainChance) .. "%", 
+                assets.colors.textSecondary, assets.colors.background)
+        end
+        
         -- Temperature forecast
         if pred.temperature then
             renderer.drawText(12, y + 1, "Temp: " .. tostring(math.floor(pred.temperature)) .. "C", 
@@ -240,9 +252,9 @@ function renderer.drawForecastPage(forecast)
         end
         
         -- Confidence
-        local confText = pred.confidence == "high" and "High confidence" or 
-                         (pred.confidence == "medium" and "Medium confidence" or "Low confidence")
-        renderer.drawText(12, y + 2, confText, assets.colors.textSecondary, assets.colors.background)
+        local confText = pred.confidence == "high" and "High" or 
+                         (pred.confidence == "medium" and "Med" or "Low")
+        renderer.drawText(24, y + 1, "Conf: " .. confText, assets.colors.textSecondary, assets.colors.background)
         
         y = y + 4
     end
@@ -329,7 +341,7 @@ function renderer.renderPage(forecast, stations, page, stationIndex, stationWeat
     
     -- Stations count in footer for all pages
     local stationCount = stations and #stations or 0
-    renderer.drawFooter("Day " .. tostring(os.day()) .. " | " .. stationCount .. " Station(s) | v1.2")
+    renderer.drawFooter("Day " .. tostring(os.day()) .. " | " .. stationCount .. " Station(s) | v2.0")
 end
 
 -- Full screen render (legacy, renders current page)
