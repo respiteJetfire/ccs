@@ -1,8 +1,8 @@
 -- weatherSystem/master/master.lua
--- Weather Master Controller
--- Receives data from stations, stores in DB, generates forecasts
--- Now with per-station temperature forecasting and weather control via commands API
-local version = "3.3.0"
+-- Weather Master Controller v5.0.0
+-- Master controls ALL forecasting - stations just register biome/position and display
+-- Global weather with biome-specific display (rain = snow in cold biomes)
+local version = "5.0.0"
 
 print("[INFO] Weather Master v" .. version .. " starting...")
 
@@ -14,19 +14,22 @@ else
     print("[INFO] Commands API not available - forecast only mode")
 end
 
--- Load modules (using dofile for reliability)
+-- Load modules
 local network = dofile("weatherSystem/master/api_network.lua")
-local db = dofile("weatherSystem/master/db.lua")
 local forecast = dofile("weatherSystem/master/forecast.lua")
 
 -- Configuration
 local CONFIG = {
-    FORECAST_INTERVAL = 60,   -- Generate forecast every 60 seconds
-    BROADCAST_INTERVAL = 30,  -- Broadcast forecast every 30 seconds
-    CLEANUP_INTERVAL = 3600,  -- Cleanup old data every hour
+    FORECAST_INTERVAL = 60,      -- Generate forecast every 60 seconds
+    BROADCAST_INTERVAL = 30,     -- Broadcast forecast every 30 seconds
     WEATHER_CHECK_INTERVAL = 50, -- Check weather every 50 seconds (~1 MC hour)
+    STATION_TIMEOUT = 300,       -- Station considered offline after 5 minutes
     HOSTNAME = "weather_master"
 }
+
+-- In-memory station tracking
+local stations = {}
+local currentForecast = nil
 
 -- Initialize network
 local success, err = network.init()
@@ -37,53 +40,89 @@ end
 -- Host as weather master service
 network.host(CONFIG.HOSTNAME)
 
--- Initialize database
-db.init()
+print("[INFO] Network initialized, hosting as: " .. CONFIG.HOSTNAME)
 
--- Current forecast cache
-local currentForecast = nil
+-- Check if station is active (seen recently)
+local function isStationActive(station)
+    if not station or not station.lastSeen then return false end
+    return (os.epoch("utc") - station.lastSeen) < (CONFIG.STATION_TIMEOUT * 1000)
+end
 
--- Process incoming weather packet
-local function processWeatherPacket(senderId, packet)
+-- Get active stations
+local function getActiveStations()
+    local active = {}
+    for id, station in pairs(stations) do
+        if isStationActive(station) then
+            table.insert(active, {
+                id = station.id,
+                name = station.name,
+                biome = station.biome,
+                dimension = station.dimension,
+                altitude = station.altitude,
+                position = station.position,
+                lastSeen = station.lastSeen
+            })
+        end
+    end
+    return active
+end
+
+-- Process incoming station packets
+local function processStationPacket(senderId, packet)
     if not packet then return false end
     
     local packetType = packet.type
+    local stationId = tostring(packet.station and packet.station.id or senderId)
     
-    if packetType == "weather_data" then
-        -- Weather data from station
-        local stationId = packet.station and packet.station.id or senderId
-        db.updateStationLastSeen(stationId)
-        db.addWeatherData(stationId, packet.data)
-        print("[DATA] Weather data from station " .. tostring(stationId))
-        return true
+    if packetType == "station_register" then
+        -- Station registration with biome data
+        local stationData = {
+            id = stationId,
+            name = packet.station and packet.station.name or ("Station " .. stationId),
+            biome = packet.biome or "minecraft:plains",
+            dimension = packet.dimension or "minecraft:overworld",
+            altitude = packet.altitude or 64,
+            position = packet.position,
+            lastSeen = os.epoch("utc")
+        }
         
-    elseif packetType == "station_register" then
-        -- Station registration
-        local stationId = packet.station and packet.station.id or senderId
-        db.registerStation(stationId, {
-            name = packet.station and packet.station.name,
-            location = packet.station and packet.station.location,
-            capabilities = packet.capabilities
-        })
-        print("[REG] Station registered: " .. tostring(stationId))
+        stations[stationId] = stationData
+        forecast.registerStation(stationId, stationData)
+        
+        print("[REG] Station " .. stationData.name .. " registered")
+        print("      Biome: " .. stationData.biome)
+        print("      Dimension: " .. stationData.dimension)
+        
+        -- Send immediate forecast response
+        if currentForecast then
+            sendForecastToStation(senderId, stationId)
+        end
         return true
         
     elseif packetType == "station_heartbeat" then
-        -- Heartbeat from station
-        local stationId = packet.station and packet.station.id or senderId
-        db.updateStationLastSeen(stationId)
+        -- Heartbeat with updated biome data
+        if stations[stationId] then
+            stations[stationId].lastSeen = os.epoch("utc")
+            if packet.biome then stations[stationId].biome = packet.biome end
+            if packet.dimension then stations[stationId].dimension = packet.dimension end
+            if packet.altitude then stations[stationId].altitude = packet.altitude end
+            if packet.position then stations[stationId].position = packet.position end
+            
+            -- Update forecast module
+            forecast.updateStation(stationId, {
+                biome = packet.biome,
+                dimension = packet.dimension,
+                altitude = packet.altitude,
+                position = packet.position
+            })
+        end
         return true
         
     elseif packetType == "forecast_request" then
-        -- Display requesting forecast
+        -- Station requesting forecast
         if currentForecast then
-            network.send(senderId, {
-                type = "forecast_response",
-                forecast = currentForecast,
-                stations = db.getActiveStations(),
-                stationWeather = getStationWeather()
-            }, network.DISPLAY_PROTOCOL)
-            print("[SEND] Forecast sent to display " .. tostring(senderId))
+            sendForecastToStation(senderId, stationId)
+            print("[SEND] Forecast sent to " .. stationId)
         end
         return true
     end
@@ -91,77 +130,66 @@ local function processWeatherPacket(senderId, packet)
     return false
 end
 
--- Get weather data for all active stations
-local function getStationWeather()
-    local stations = db.getActiveStations()
-    local stationWeather = {}
+-- Send forecast to a specific station
+function sendForecastToStation(computerId, stationId)
+    if not currentForecast then return end
     
-    for _, station in ipairs(stations) do
-        local latest = db.getLatestWeatherByStation(station.id)
-        if latest and latest.data then
-            -- Create a shallow copy to avoid shared table references
-            local dataCopy = {}
-            for k, v in pairs(latest.data) do
-                dataCopy[k] = v
-            end
-            -- Add calculated values
-            dataCopy.temperatureCelsius = forecast.getTemperatureCelsius(latest.data)
-            dataCopy.humidityPercent = forecast.getHumidityPercent(latest.data)
-            stationWeather[tostring(station.id)] = {data = dataCopy}
-        end
-    end
+    -- Get station-specific forecast
+    local stationForecast = currentForecast.stationForecasts and 
+                            currentForecast.stationForecasts[stationId]
     
-    return stationWeather
+    -- Build response packet
+    local response = {
+        type = "forecast_response",
+        version = version,
+        generatedAt = currentForecast.generatedAt,
+        gameTime = currentForecast.gameTime,
+        gameDay = currentForecast.gameDay,
+        currentHour = currentForecast.currentHour,
+        season = currentForecast.season,
+        globalWeather = currentForecast.globalWeather,
+        current = currentForecast.current,
+        summary = currentForecast.summary,
+        -- Station-specific forecasts
+        hourly = stationForecast and stationForecast.hourly or {},
+        fiveDay = stationForecast and stationForecast.fiveDay or {}
+    }
+    
+    network.send(computerId, response, network.STATION_PROTOCOL)
 end
 
 -- Generate and update forecast
 local function updateForecast()
-    local historyData = db.getRecentWeather(50)
-    local latestData = nil
+    local activeStations = getActiveStations()
     
-    -- Get latest from any active station
-    local stations = db.getActiveStations()
-    if #stations > 0 then
-        latestData = db.getLatestWeatherByStation(stations[1].id)
-        -- Add station ID to latestData so forecast can track it
-        if latestData then
-            latestData.stationId = stations[1].id
+    -- Generate forecast with registered station data
+    currentForecast = forecast.generate(stations)
+    
+    if currentForecast then
+        print("[FORECAST] Updated: " .. (currentForecast.summary or "Unknown"))
+        print("[FORECAST] Season: " .. (currentForecast.season or "Unknown"))
+        if currentForecast.current then
+            print("[FORECAST] Temp: " .. tostring(currentForecast.current.temperature) .. "C")
+            print("[FORECAST] Rain: " .. tostring(currentForecast.current.rainChance or 0) .. "%")
         end
     end
     
-    -- Get weather data for all stations (for per-station forecasts)
-    local allStationsData = getStationWeather()
-    
-    -- Generate forecast with all station data for per-station temperature forecasting
-    currentForecast = forecast.generate(historyData, latestData, allStationsData)
-    
-    -- The forecast.generate now handles temperature from station forecasts
-    -- Just log the values
-    db.saveForecast(currentForecast)
-    
-    print("[FORECAST] Updated: " .. currentForecast.summary)
-    print("[FORECAST] Season: " .. (currentForecast.season or "Unknown"))
-    if currentForecast.current then
-        print("[FORECAST] Temperature: " .. tostring(currentForecast.current.temperature) .. "C")
-        print("[FORECAST] Rain chance: " .. tostring(currentForecast.current.rainChance or 0) .. "%")
-    end
-    if currentForecast.current then
-        print("[FORECAST] Rain chance: " .. tostring(currentForecast.current.rainChance or 0) .. "%")
-    end
     return currentForecast
 end
 
--- Broadcast forecast to all displays
+-- Broadcast forecast to all stations
 local function broadcastForecast()
-    if currentForecast then
-        network.broadcast({
-            type = "forecast_broadcast",
-            forecast = currentForecast,
-            stations = db.getActiveStations(),
-            stationWeather = getStationWeather()
-        }, network.DISPLAY_PROTOCOL)
-        print("[BROADCAST] Forecast broadcast sent")
+    if not currentForecast then return end
+    
+    local activeStations = getActiveStations()
+    if #activeStations == 0 then return end
+    
+    -- Broadcast to all stations
+    for _, station in ipairs(activeStations) do
+        sendForecastToStation(tonumber(station.id) or station.id, station.id)
     end
+    
+    print("[BROADCAST] Forecast sent to " .. #activeStations .. " stations")
 end
 
 -- Network receive loop
@@ -169,13 +197,7 @@ local function receiveLoop()
     while true do
         local senderId, message, protocol = network.receive(network.STATION_PROTOCOL, 10)
         if senderId and message then
-            processWeatherPacket(senderId, message)
-        end
-        
-        -- Also check for display protocol requests
-        senderId, message, protocol = network.receive(network.DISPLAY_PROTOCOL, 1)
-        if senderId and message then
-            processWeatherPacket(senderId, message)
+            processStationPacket(senderId, message)
         end
     end
 end
@@ -196,12 +218,26 @@ local function broadcastLoop()
     end
 end
 
--- Cleanup loop
-local function cleanupLoop()
+-- Weather control loop (applies weather changes using commands API)
+local function weatherControlLoop()
+    if not hasCommandsAPI then
+        print("[WEATHER] Weather control disabled (no commands API)")
+        return
+    end
+    
+    print("[WEATHER] Weather control loop started")
+    
     while true do
-        sleep(CONFIG.CLEANUP_INTERVAL)
-        db.cleanup()
-        db.saveAll()
+        local currentTick = os.time() * 1000
+        local gameDay = os.day()
+        
+        -- Apply weather based on forecast
+        local result = forecast.applyWeather(currentTick, gameDay)
+        if result and result.changed then
+            print("[WEATHER] Changed: " .. (result.command or ""))
+        end
+        
+        sleep(CONFIG.WEATHER_CHECK_INTERVAL)
     end
 end
 
@@ -209,36 +245,11 @@ end
 local function statusLoop()
     while true do
         sleep(60)
-        local stations = db.getActiveStations()
-        local globalWeather = forecast.getGlobalWeatherState()
-        print("[STATUS] Active stations: " .. tostring(#stations))
-        print("[STATUS] Global weather - Rain: " .. tostring(globalWeather.isRaining) .. ", Thunder: " .. tostring(globalWeather.isThundering))
-    end
-end
-
--- Weather control loop (applies weather changes using commands API)
-local function weatherControlLoop()
-    if not hasCommandsAPI then
-        print("[WEATHER] Weather control disabled (no commands API)")
-        return  -- Exit loop if no commands API
-    end
-    
-    print("[WEATHER] Weather control loop started")
-    local lastTick = 0
-    
-    while true do
-        -- Approximate current tick from game time
-        local currentTick = os.time() * 1000
-        local gameDay = os.day()
-        
-        -- Check and apply weather
-        local result = forecast.checkAndApplyWeather(currentTick, gameDay)
-        if result and result.changed then
-            print("[WEATHER] Weather changed to: " .. tostring(result.newState))
-            print("[WEATHER] Rain chance was: " .. tostring(result.currentRainChance) .. "%")
-        end
-        
-        sleep(CONFIG.WEATHER_CHECK_INTERVAL)
+        local active = getActiveStations()
+        local globalWeather = forecast.getGlobalWeather()
+        print("[STATUS] Active stations: " .. #active)
+        print("[STATUS] Rain: " .. tostring(globalWeather.isRaining) .. 
+              ", Thunder: " .. tostring(globalWeather.isThundering))
     end
 end
 
@@ -252,11 +263,10 @@ updateForecast()
 
 -- Run all loops in parallel
 if hasCommandsAPI then
-    parallel.waitForAny(receiveLoop, forecastLoop, broadcastLoop, cleanupLoop, statusLoop, weatherControlLoop)
+    parallel.waitForAny(receiveLoop, forecastLoop, broadcastLoop, statusLoop, weatherControlLoop)
 else
-    parallel.waitForAny(receiveLoop, forecastLoop, broadcastLoop, cleanupLoop, statusLoop)
+    parallel.waitForAny(receiveLoop, forecastLoop, broadcastLoop, statusLoop)
 end
 
 -- Cleanup on exit
-db.saveAll()
 network.close()
