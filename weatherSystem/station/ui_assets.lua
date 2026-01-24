@@ -1,6 +1,6 @@
--- weatherSystem/display/ui_assets.lua
--- UI Assets - Icons and Color Palettes for Weather Display
-local version = "2.0.0"
+-- weatherSystem/station/ui_assets.lua
+-- UI Assets - Icons and Color Palettes for Weather Station Display
+local version = "4.0.0"
 
 local assets = {}
 

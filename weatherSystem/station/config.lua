@@ -1,6 +1,6 @@
 -- weatherSystem/station/config.lua
--- Configuration for Weather Station
-local version = "2.0.0"
+-- Configuration for Weather Station with Integrated Display
+local version = "4.0.0"
 
 local config = {
     -- Station identification
@@ -11,11 +11,19 @@ local config = {
     -- Network settings
     PROTOCOL = "weather_net",
     MASTER_PROTOCOL = "weather_master",
+    DISPLAY_PROTOCOL = "weather_display",
     CHANNEL = 100,
     
     -- Timing settings
     COLLECT_INTERVAL = 30,  -- seconds between data collection
     SEND_INTERVAL = 60,     -- seconds between sending packets to master
+    
+    -- Display settings (used when monitor is attached)
+    DISPLAY = {
+        REFRESH_INTERVAL = 5,       -- Refresh display every 5 seconds
+        PAGE_CYCLE_TIME = 8,        -- Seconds per page when cycling
+        TEXT_SCALE = 0.5            -- Monitor text scale
+    },
     
     -- Sensor settings
     ENABLE_ENVIRONMENT_DETECTOR = true,

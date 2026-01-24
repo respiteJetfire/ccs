@@ -1,11 +1,11 @@
--- weatherSystem/display/ui_renderer.lua
--- UI Renderer for Weather Display with 24-hour and 5-day forecasts
-local version = "3.3.0"
+-- weatherSystem/station/ui_renderer.lua
+-- UI Renderer for Weather Station Display with 24-hour and 5-day forecasts
+local version = "4.0.0"
 
 local renderer = {}
 
 -- Get assets module
-local assets = dofile("weatherSystem/display/ui_assets.lua")
+local assets = dofile("weatherSystem/station/ui_assets.lua")
 
 -- Monitor reference
 local monitor = nil
@@ -144,7 +144,7 @@ function renderer.drawProgressBar(x, y, width, value, maxValue, fgColor, bgColor
     monitor.write(string.rep(" ", width - filled))
 end
 
--- Draw current conditions page (now uses station-specific forecast data)
+-- Draw current conditions page (uses station-specific forecast data)
 function renderer.drawCurrentPage(forecast, stations, stationWeather, selectedStationId)
     if not forecast or not forecast.current then
         renderer.drawCenteredText(10, "No weather data available", assets.colors.textWarning)
@@ -383,81 +383,23 @@ function renderer.drawForecastPage(forecast)
     renderer.draw24HourPage(forecast, nil)
 end
 
--- Draw stations page showing weather at each station
-function renderer.drawStationsPage(stations, stationIndex, stationWeather, forecast)
-    renderer.drawText(2, 5, "Station Weather", assets.colors.textHighlight, assets.colors.background)
-    renderer.drawLine(6, "-", assets.colors.textSecondary, assets.colors.background)
-    
-    if not stations or #stations == 0 then
-        renderer.drawText(2, 8, "No stations connected", assets.colors.textWarning, assets.colors.background)
-        renderer.drawText(2, 10, "Waiting for weather stations...", assets.colors.textSecondary, assets.colors.background)
-        return
-    end
-    
-    local y = 7
-    for i, station in ipairs(stations) do
-        if y > monitorHeight - 3 then break end
-        
-        local highlight = (i == stationIndex)
-        local nameColor = highlight and assets.colors.textHighlight or assets.colors.textPrimary
-        local marker = highlight and "> " or "  "
-        
-        -- Station name
-        renderer.drawText(2, y, marker .. (station.name or ("Station " .. station.id)), nameColor, assets.colors.background)
-        
-        -- Get weather for this station
-        local weather = stationWeather and stationWeather[tostring(station.id)]
-        if weather and weather.data then
-            local data = weather.data
-            
-            -- Weather state
-            local state = "clear"
-            local stateColor = assets.colors.clear
-            if data.isThundering == true then
-                state = "Thunder"
-                stateColor = assets.colors.thunder
-            elseif data.isRaining == true then
-                state = "Rain"
-                stateColor = assets.colors.rain
-            else
-                state = "Clear"
-                stateColor = assets.colors.clear
-            end
-            
-            local tempC = data.temperatureCelsius or 15
-            local tempColor = assets.getTemperatureColor(tempC)
-            local biome = data.biome and data.biome:gsub("minecraft:", ""):gsub("_", " ") or "unknown"
-            
-            renderer.drawText(6, y + 1, state, stateColor, assets.colors.background)
-            renderer.drawText(16, y + 1, tostring(math.floor(tempC)) .. "C", tempColor, assets.colors.background)
-            renderer.drawText(22, y + 1, biome, assets.colors.textSecondary, assets.colors.background)
-            
-            -- Show altitude if available
-            if data.altitude then
-                renderer.drawText(6, y + 2, "Alt: " .. tostring(math.floor(data.altitude)) .. "m", 
-                    assets.colors.textSecondary, assets.colors.background)
-            end
-        else
-            renderer.drawText(6, y + 1, "No data", assets.colors.textSecondary, assets.colors.background)
-        end
-        
-        y = y + 4
-    end
-end
-
 -- Render specific page
 function renderer.renderPage(forecast, stations, page, stationIndex, stationWeather)
     renderer.clear()
     
     local pageNames = {
-        current = "1/5",
-        hourly = "2/5 24hr",
-        fiveday = "3/5 5day",
-        forecast = "4/5",
-        stations = "5/5"
+        current = "1/3",
+        hourly = "2/3 24hr",
+        fiveday = "3/3 5day"
     }
     
-    renderer.drawHeader("Weather Channel", os.time(), pageNames[page] or "")
+    -- Get station name for header
+    local stationName = "Weather Station"
+    if stations and stationIndex and stations[stationIndex] then
+        stationName = stations[stationIndex].name or stationName
+    end
+    
+    renderer.drawHeader(stationName, os.time(), pageNames[page] or "")
     
     local selectedStationId = nil
     if stations and stationIndex and stations[stationIndex] then
@@ -470,17 +412,12 @@ function renderer.renderPage(forecast, stations, page, stationIndex, stationWeat
         renderer.draw24HourPage(forecast, selectedStationId)
     elseif page == "fiveday" then
         renderer.draw5DayPage(forecast, selectedStationId)
-    elseif page == "forecast" then
-        renderer.drawForecastPage(forecast)
-    elseif page == "stations" then
-        renderer.drawStationsPage(stations, stationIndex, stationWeather, forecast)
     else
         renderer.drawCurrentPage(forecast, stations, stationWeather, selectedStationId)
     end
     
-    -- Footer with station count
-    local stationCount = stations and #stations or 0
-    renderer.drawFooter("Day " .. tostring(os.day()) .. " | " .. stationCount .. " Station(s) | v3.3")
+    -- Footer with day info
+    renderer.drawFooter("Day " .. tostring(os.day()) .. " | v4.0")
 end
 
 -- Full screen render (legacy)
