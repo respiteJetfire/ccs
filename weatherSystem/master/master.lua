@@ -1,7 +1,7 @@
 -- weatherSystem/master/master.lua
 -- Weather Master Controller
 -- Receives data from stations, stores in DB, generates forecasts
-local version = "1.2.0"
+local version = "1.2.1"
 
 print("[INFO] Weather Master v" .. version .. " starting...")
 
@@ -69,7 +69,9 @@ local function processWeatherPacket(senderId, packet)
         if currentForecast then
             network.send(senderId, {
                 type = "forecast_response",
-                forecast = currentForecast
+                forecast = currentForecast,
+                stations = db.getActiveStations(),
+                stationWeather = getStationWeather()
             }, network.DISPLAY_PROTOCOL)
             print("[SEND] Forecast sent to display " .. tostring(senderId))
         end
@@ -99,6 +101,11 @@ local function updateForecast()
         
         local humidity = forecast.getHumidityPercent(currentForecast.current.data)
         currentForecast.current.data.humidityPercent = humidity
+        
+        -- Track which station this data came from
+        if #stations > 0 then
+            currentForecast.current.stationId = stations[1].id
+        end
     end
     
     db.saveForecast(currentForecast)
@@ -111,13 +118,34 @@ local function updateForecast()
     return currentForecast
 end
 
+-- Get weather data for all active stations
+local function getStationWeather()
+    local stations = db.getActiveStations()
+    local stationWeather = {}
+    
+    for _, station in ipairs(stations) do
+        local latest = db.getLatestWeatherByStation(station.id)
+        if latest and latest.data then
+            -- Add calculated values
+            local tempC = forecast.getTemperatureCelsius(latest.data)
+            local humidity = forecast.getHumidityPercent(latest.data)
+            latest.data.temperatureCelsius = tempC
+            latest.data.humidityPercent = humidity
+            stationWeather[tostring(station.id)] = latest
+        end
+    end
+    
+    return stationWeather
+end
+
 -- Broadcast forecast to all displays
 local function broadcastForecast()
     if currentForecast then
         network.broadcast({
             type = "forecast_broadcast",
             forecast = currentForecast,
-            stations = db.getActiveStations()
+            stations = db.getActiveStations(),
+            stationWeather = getStationWeather()
         }, network.DISPLAY_PROTOCOL)
         print("[BROADCAST] Forecast broadcast sent")
     end

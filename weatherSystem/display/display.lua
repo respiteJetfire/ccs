@@ -1,6 +1,6 @@
 -- weatherSystem/display/display.lua
 -- Weather Display Unit - Weather Channel Style UI
-local version = "1.1.0"
+local version = "1.2.0"
 
 print("[INFO] Weather Display v" .. version .. " starting...")
 
@@ -55,6 +55,7 @@ renderer.init(monitor)
 -- State
 local currentForecast = nil
 local currentStations = {}
+local stationWeather = {}  -- Weather data per station {[stationId] = weatherData}
 local lastRequestTime = 0
 local animationFrame = 1
 local currentPage = PAGES.CURRENT
@@ -74,6 +75,28 @@ local function processForecast(data)
     if data.type == "forecast_response" or data.type == "forecast_broadcast" then
         currentForecast = data.forecast
         currentStations = data.stations or {}
+        
+        -- Extract weather data per station from forecast
+        if data.stationWeather then
+            stationWeather = data.stationWeather
+        end
+        
+        -- Also store current forecast data as weather for the current station
+        if currentForecast and currentForecast.current and currentForecast.current.data then
+            local stationId = currentForecast.current.stationId
+            if stationId then
+                stationWeather[tostring(stationId)] = {
+                    data = currentForecast.current.data
+                }
+            end
+            -- If we have stations but no station weather, use current data for first station
+            if #currentStations > 0 and next(stationWeather) == nil then
+                stationWeather[tostring(currentStations[1].id)] = {
+                    data = currentForecast.current.data
+                }
+            end
+        end
+        
         local state = currentForecast.current and currentForecast.current.state or "unknown"
         local temp = currentForecast.current and currentForecast.current.data and currentForecast.current.data.temperatureCelsius or "?"
         print("[DATA] Forecast: " .. state .. ", " .. tostring(temp) .. "C, Stations: " .. #currentStations)
@@ -139,7 +162,7 @@ end
 local function displayLoop()
     while true do
         if currentForecast then
-            renderer.renderPage(currentForecast, currentStations, currentPage, currentStationIndex)
+            renderer.renderPage(currentForecast, currentStations, currentPage, currentStationIndex, stationWeather)
         else
             drawLoadingScreen()
         end

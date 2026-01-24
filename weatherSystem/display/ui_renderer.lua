@@ -1,6 +1,6 @@
 -- weatherSystem/display/ui_renderer.lua
 -- UI Renderer for Weather Display
-local version = "1.2.0"
+local version = "1.2.1"
 
 local renderer = {}
 
@@ -156,8 +156,8 @@ function renderer.drawCurrentPage(forecast, stations)
     local state = current.state or "clear"
     local weatherColor = assets.getWeatherColor(state)
     
-    -- Draw large icon
-    renderer.drawLargeIcon(3, 5, state, weatherColor)
+    -- Draw large icon (y=6 to prevent top cutoff)
+    renderer.drawLargeIcon(3, 6, state, weatherColor)
     
     -- Draw current conditions text
     local startX = 20
@@ -193,13 +193,14 @@ function renderer.drawCurrentPage(forecast, stations)
         
         -- Rain/Thunder status
         local statusY = 12
-        if data.isRaining == true then
-            local rainPct = data.rainLevel and string.format(" (%.0f%%)", data.rainLevel * 100) or ""
+        if data.isThundering == true then
+            local thunderPct = data.thunderLevel and data.thunderLevel > 0 and string.format(" (%.0f%%)", data.thunderLevel * 100) or ""
+            renderer.drawText(startX, statusY, "* Thunderstorm" .. thunderPct, assets.colors.thunder, assets.colors.background)
+            statusY = statusY + 1
+        elseif data.isRaining == true then
+            local rainPct = data.rainLevel and data.rainLevel > 0 and string.format(" (%.0f%%)", data.rainLevel * 100) or ""
             renderer.drawText(startX, statusY, "* Raining" .. rainPct, assets.colors.rain, assets.colors.background)
             statusY = statusY + 1
-        end
-        if data.isThundering == true then
-            renderer.drawText(startX, statusY, "* Thunder", assets.colors.thunder, assets.colors.background)
         end
     end
     
@@ -247,9 +248,9 @@ function renderer.drawForecastPage(forecast)
     end
 end
 
--- Draw stations page
-function renderer.drawStationsPage(stations, stationIndex)
-    renderer.drawText(2, 5, "Weather Stations", assets.colors.textHighlight, assets.colors.background)
+-- Draw stations page showing weather at each station
+function renderer.drawStationsPage(stations, stationIndex, stationWeather)
+    renderer.drawText(2, 5, "Station Weather", assets.colors.textHighlight, assets.colors.background)
     renderer.drawLine(6, "-", assets.colors.textSecondary, assets.colors.background)
     
     if not stations or #stations == 0 then
@@ -258,37 +259,54 @@ function renderer.drawStationsPage(stations, stationIndex)
         return
     end
     
-    renderer.drawText(2, 7, "Total Stations: " .. tostring(#stations), assets.colors.textPrimary, assets.colors.background)
-    
-    local y = 9
+    local y = 7
     for i, station in ipairs(stations) do
+        if y > monitorHeight - 3 then break end  -- Don't overflow
+        
         local highlight = (i == stationIndex)
         local nameColor = highlight and assets.colors.textHighlight or assets.colors.textPrimary
         local marker = highlight and "> " or "  "
         
+        -- Station name
         renderer.drawText(2, y, marker .. (station.name or ("Station " .. station.id)), nameColor, assets.colors.background)
         
-        -- Station details
-        if station.location then
-            local loc = station.location
-            local locStr = string.format("  X:%d Y:%d Z:%d", loc.x or 0, loc.y or 0, loc.z or 0)
-            renderer.drawText(4, y + 1, locStr, assets.colors.textSecondary, assets.colors.background)
+        -- Get weather for this station
+        local weather = stationWeather and stationWeather[tostring(station.id)]
+        if weather and weather.data then
+            local data = weather.data
+            
+            -- Determine weather state
+            local state = "clear"
+            local stateColor = assets.colors.clear
+            if data.isThundering == true then
+                state = "Thunder"
+                stateColor = assets.colors.thunder
+            elseif data.isRaining == true then
+                state = "Rain"
+                stateColor = assets.colors.rain
+            else
+                state = "Clear"
+                stateColor = assets.colors.clear
+            end
+            
+            -- Weather state and temp on same line
+            local tempC = data.temperatureCelsius or 15
+            local tempColor = assets.getTemperatureColor(tempC)
+            local biome = data.biome and data.biome:gsub("minecraft:", ""):gsub("_", " ") or "unknown"
+            
+            renderer.drawText(6, y + 1, state, stateColor, assets.colors.background)
+            renderer.drawText(16, y + 1, tostring(math.floor(tempC)) .. "C", tempColor, assets.colors.background)
+            renderer.drawText(22, y + 1, biome, assets.colors.textSecondary, assets.colors.background)
+        else
+            renderer.drawText(6, y + 1, "No data", assets.colors.textSecondary, assets.colors.background)
         end
         
-        -- Last seen
-        if station.lastSeen then
-            local ago = math.floor((os.epoch("utc") - station.lastSeen) / 1000)
-            local agoStr = ago < 60 and (ago .. "s ago") or (math.floor(ago/60) .. "m ago")
-            renderer.drawText(4, y + 2, "  Last: " .. agoStr, assets.colors.textSecondary, assets.colors.background)
-        end
-        
-        y = y + 4
-        if y > monitorHeight - 4 then break end  -- Don't overflow
+        y = y + 3
     end
 end
 
 -- Render specific page
-function renderer.renderPage(forecast, stations, page, stationIndex)
+function renderer.renderPage(forecast, stations, page, stationIndex, stationWeather)
     renderer.clear()
     
     local pageNames = {
@@ -304,7 +322,7 @@ function renderer.renderPage(forecast, stations, page, stationIndex)
     elseif page == "forecast" then
         renderer.drawForecastPage(forecast)
     elseif page == "stations" then
-        renderer.drawStationsPage(stations, stationIndex)
+        renderer.drawStationsPage(stations, stationIndex, stationWeather)
     else
         renderer.drawCurrentPage(forecast, stations)
     end
