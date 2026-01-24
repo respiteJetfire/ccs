@@ -1,7 +1,7 @@
 -- weatherSystem/master/forecast.lua
 -- Weather Forecast Logic with Per-Station Temperature Forecasting
 -- Includes 24-hour and 5-day forecasts with weather control enforcement
-local version = "3.2.0"
+local version = "3.2.1"
 
 local forecast = {}
 
@@ -557,13 +557,19 @@ function forecast.checkAndApplyWeather(currentTick, gameDay)
     
     if command and commands then
         globalWeatherState.lastCommandTick = currentTick
-        local success, result = pcall(function()
-            return commands.exec(command)
+        -- commands.exec returns: success (boolean), results (table)
+        local ok, cmdSuccess, cmdResults = pcall(function()
+            local s, r = commands.exec(command)
+            return s, r
         end)
-        if success and result then
-            print("[WEATHER] Executed: " .. command .. " => " .. tostring(result[1]))
-        elseif not success then
-            print("[WEATHER] Command failed: " .. tostring(result))
+        if ok and cmdSuccess then
+            local resultStr = cmdResults and cmdResults[1] or "OK"
+            print("[WEATHER] Executed: " .. command .. " => " .. tostring(resultStr))
+        elseif ok and not cmdSuccess then
+            local errStr = cmdResults and cmdResults[1] or "Unknown error"
+            print("[WEATHER] Command rejected: " .. tostring(errStr))
+        elseif not ok then
+            print("[WEATHER] Command failed: " .. tostring(cmdSuccess))
         end
     elseif command then
         print("[WEATHER] Would execute: " .. command .. " (no commands API)")
