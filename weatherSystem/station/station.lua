@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.2.1 - Biome detector, forecast display with animated weather
+-- Weather Station v6.2.2 - Biome detector, forecast display with animated weather
 -- Master handles all forecasting - station registers and displays
-local version = "6.2.0"
+local version = "6.2.2"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -85,6 +85,8 @@ local pageList = {"current", "hourly", "fiveday", "overview", "other5day", "othe
 local currentPageIndex = 1
 local displayStationIndex = 1
 local otherStationIndex = 0  -- For displaying other stations (0 = none selected yet)
+local cachedOtherStation = nil  -- Cached other station for "other" pages
+local cachedOtherForecast = nil
 
 -- Detect biome data
 local function detectBiomeData()
@@ -209,9 +211,13 @@ local function cycleStation()
     end
 end
 
--- Get a random other station (not this one)
-local function getRandomOtherStation()
-    if #allStations <= 1 then return nil, nil end
+-- Select next other station (cycles through stations not this one) and cache it
+local function selectNextOtherStation()
+    if #allStations <= 1 then 
+        cachedOtherStation = nil
+        cachedOtherForecast = nil
+        return 
+    end
     
     -- Find stations that are not this station
     local otherStations = {}
@@ -221,20 +227,22 @@ local function getRandomOtherStation()
         end
     end
     
-    if #otherStations == 0 then return nil, nil end
+    if #otherStations == 0 then 
+        cachedOtherStation = nil
+        cachedOtherForecast = nil
+        return 
+    end
     
-    -- Pick a random one (or cycle through them)
+    -- Cycle to next other station
     otherStationIndex = otherStationIndex + 1
     if otherStationIndex > #otherStations then
         otherStationIndex = 1
     end
     
-    local station = otherStations[otherStationIndex]
-    local stationId = tostring(station.id)
-    local stationForecast = currentForecast and currentForecast.stationForecasts and 
-                            currentForecast.stationForecasts[stationId]
-    
-    return station, stationForecast
+    cachedOtherStation = otherStations[otherStationIndex]
+    local stationId = tostring(cachedOtherStation.id)
+    cachedOtherForecast = currentForecast and currentForecast.stationForecasts and 
+                          currentForecast.stationForecasts[stationId]
 end
 
 -- Get current page list based on whether we have other stations
@@ -314,14 +322,8 @@ local function displayLoop()
                 stationForecasts = currentForecast.stationForecasts or {}
             }
             
-            -- Get other station for "other" pages
-            local otherStation, otherStationForecast = nil, nil
-            if currentPage == "other5day" or currentPage == "othercurrent" then
-                otherStation, otherStationForecast = getRandomOtherStation()
-            end
-            
-            -- Render page
-            renderer.renderPage(displayForecast, allStations, currentPage, displayStationIndex, otherStation, otherStationForecast)
+            -- Render page (use cached other station for "other" pages)
+            renderer.renderPage(displayForecast, allStations, currentPage, displayStationIndex, cachedOtherStation, cachedOtherForecast)
             
             -- Advance animation frame
             assets.nextFrame()
@@ -357,6 +359,11 @@ local function cycleLoop()
             end
             currentPage = activePages[currentPageIndex]
             lastPageChange = now
+            
+            -- Select a new other station when entering "other" pages
+            if currentPage == "other5day" or currentPage == "othercurrent" then
+                selectNextOtherStation()
+            end
         end
         
         sleep(1)
