@@ -49,7 +49,8 @@ assets.symbols = {
     cloudy = "#",
     rain = "/",
     storm = "!",
-    thunder = "!",
+    thunder = "z",
+    thunderstorm = "z",
     snow = "*",
     fog = "=",
     partlycloudy = "~",
@@ -69,12 +70,14 @@ assets.animatedSymbols = {
     lightrain = {"'", ",", "'", ","},        -- Light drops
     heavyrain = {"/", "|", "\\", "|"},       -- Heavy rain
     storm = {"!", "/", "!", "\\"},           -- Stormy
-    thunder = {"!", "*", "!", "#"},          -- Lightning flash
+    thunder = {"z", "*", "Z", "*"},          -- Lightning flash
+    thunderstorm = {"z", "*", "Z", "*"},     -- Lightning flash
     snow = {"*", "o", "+", "o"},             -- Falling snow
     lightsnow = {".", "*", ".", "+"},        -- Light snow
     blizzard = {"*", "#", "*", "#"},         -- Heavy snow
     fog = {"=", "-", "=", "-"},              -- Fog shifting
     unknown = {"?", "?", "?", "?"}
+}
 }
 
 -- Get current animation frame for a weather state
