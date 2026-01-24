@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.3.1 - Fixed station assignment for main/other pages
+-- Weather Station v6.3.2 - Improved fluffy cloud icons
 -- Master handles all forecasting - station registers and displays
-local version = "6.3.1"
+local version = "6.3.2"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 

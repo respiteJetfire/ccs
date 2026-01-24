@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.1 - Fixed station display and UI improvements
-local version = "6.3.1"
+-- UI Renderer v6.3.2 - Improved fluffy cloud icons
+local version = "6.3.2"
 
 local renderer = {}
 
