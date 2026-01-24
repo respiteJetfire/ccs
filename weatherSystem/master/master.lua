@@ -12,8 +12,8 @@ local forecast = dofile("weatherSystem/master/forecast.lua")
 
 -- Configuration
 local CONFIG = {
-    FORECAST_INTERVAL = 300,  -- Generate forecast every 5 minutes
-    BROADCAST_INTERVAL = 60,  -- Broadcast forecast every minute
+    FORECAST_INTERVAL = 60,   -- Generate forecast every 60 seconds
+    BROADCAST_INTERVAL = 30,  -- Broadcast forecast every 30 seconds
     CLEANUP_INTERVAL = 3600,  -- Cleanup old data every hour
     HOSTNAME = "weather_master"
 }

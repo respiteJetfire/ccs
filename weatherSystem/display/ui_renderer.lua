@@ -80,9 +80,22 @@ function renderer.drawFooter(text)
     renderer.drawCenteredText(y, text, assets.colors.textSecondary, assets.colors.footerBg)
 end
 
+-- Map weather state to icon name
+local function getIconForState(state)
+    local stateToIcon = {
+        ["clear"] = "sun",
+        ["cloudy"] = "cloud",
+        ["rain"] = "rain",
+        ["storm"] = "storm",
+        ["thunder"] = "lightning"
+    }
+    return stateToIcon[state] or "sun"
+end
+
 -- Draw weather icon at position
-function renderer.drawIcon(x, y, iconName, color)
-    local icon = assets.icons[iconName] or assets.icons.unknown
+function renderer.drawIcon(x, y, state, color)
+    local iconName = getIconForState(state)
+    local icon = assets.icons[iconName] or assets.icons.sun
     color = color or assets.colors.textPrimary
     
     for i, line in ipairs(icon) do
@@ -91,7 +104,8 @@ function renderer.drawIcon(x, y, iconName, color)
 end
 
 -- Draw large weather icon
-function renderer.drawLargeIcon(x, y, iconName, color)
+function renderer.drawLargeIcon(x, y, state, color)
+    local iconName = getIconForState(state)
     local icon = assets.largeIcons[iconName] or assets.largeIcons.sun
     color = color or assets.colors.textPrimary
     

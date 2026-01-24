@@ -57,16 +57,26 @@ local function getCurrentState(latestData)
     end
     
     local data = latestData.data
-    if data.isThundering then
+    
+    -- Check for thunder first (highest priority)
+    if data.isThundering == true or (data.thunderLevel and data.thunderLevel > 0.1) then
         return forecast.WEATHER_STATES.THUNDER
-    elseif data.isRaining then
-        if data.humidity and data.humidity > 0.8 then
+    end
+    
+    -- Check for rain
+    if data.isRaining == true or (data.rainLevel and data.rainLevel > 0.1) then
+        -- Check if it's a heavy storm
+        if (data.rainLevel and data.rainLevel > 0.7) or (data.humidity and data.humidity > 0.8) then
             return forecast.WEATHER_STATES.STORM
         end
         return forecast.WEATHER_STATES.RAIN
-    elseif data.humidity and data.humidity > 0.6 then
+    end
+    
+    -- Check for cloudy conditions
+    if data.humidity and data.humidity > 0.6 then
         return forecast.WEATHER_STATES.CLOUDY
     end
+    
     return forecast.WEATHER_STATES.CLEAR
 end
 
@@ -270,17 +280,17 @@ function forecast.biomeTocelsius(biome, mcTemp)
     -- First check if we have a specific biome mapping
     local biomeKey = biome or "unknown"
     if biomeTemperatures[biomeKey] then
-        -- Add some variation based on time of day and weather
         return biomeTemperatures[biomeKey]
     end
     
     -- Fallback: convert MC temp scale to Celsius
     -- MC temp 0.0 -> -15°C, 0.5 -> 15°C, 1.0 -> 30°C, 2.0 -> 50°C
-    if mcTemp then
+    if mcTemp and mcTemp > 0.01 then
         return math.floor((mcTemp * 40) - 10)
     end
     
-    return 15  -- Default temperate
+    -- If still unknown, return random temperature between 0 and 20
+    return math.random(0, 20)
 end
 
 -- Apply time-of-day temperature variation

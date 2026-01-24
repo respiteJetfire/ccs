@@ -11,8 +11,8 @@ local assets = dofile("weatherSystem/display/ui_assets.lua")
 
 -- Configuration
 local CONFIG = {
-    REFRESH_INTERVAL = 10,      -- Refresh display every 10 seconds
-    REQUEST_INTERVAL = 60,      -- Request new forecast every minute
+    REFRESH_INTERVAL = 5,       -- Refresh display every 5 seconds
+    REQUEST_INTERVAL = 30,      -- Request new forecast every 30 seconds
     ANIMATION_SPEED = 0.5,      -- Animation frame delay
     USE_MONITOR = true          -- Use external monitor if available
 }
@@ -62,7 +62,9 @@ local function processForecast(data)
     if data.type == "forecast_response" or data.type == "forecast_broadcast" then
         currentForecast = data.forecast
         currentStations = data.stations or {}
-        print("[DATA] Forecast received - " .. (currentForecast.summary or "No summary"))
+        local state = currentForecast.current and currentForecast.current.state or "unknown"
+        local temp = currentForecast.current and currentForecast.current.data and currentForecast.current.data.temperatureCelsius or "?"
+        print("[DATA] Forecast: " .. state .. ", " .. tostring(temp) .. "C, Stations: " .. #currentStations)
         return true
     end
     return false
