@@ -244,4 +244,81 @@ function assets.getLargeIcon(state)
     return assets.largeIcons[state] or assets.largeIcons.cloud
 end
 
+-- Cold/snow biomes list
+assets.coldBiomes = {
+    ["minecraft:snowy_plains"] = true,
+    ["minecraft:snowy_taiga"] = true,
+    ["minecraft:snowy_beach"] = true,
+    ["minecraft:snowy_slopes"] = true,
+    ["minecraft:frozen_peaks"] = true,
+    ["minecraft:jagged_peaks"] = true,
+    ["minecraft:frozen_river"] = true,
+    ["minecraft:frozen_ocean"] = true,
+    ["minecraft:deep_frozen_ocean"] = true,
+    ["minecraft:ice_spikes"] = true,
+    ["minecraft:grove"] = true,
+    ["minecraft:old_growth_pine_taiga"] = true,
+    ["minecraft:old_growth_spruce_taiga"] = true,
+    ["minecraft:taiga"] = true,
+    -- Add common modded cold biomes
+    ["terralith:snowy"] = true,
+    ["terralith:frozen"] = true,
+    ["terralith:ice"] = true
+}
+
+-- Check if biome is cold (can snow)
+function assets.isColdBiome(biome)
+    if not biome then return false end
+    biome = biome:lower()
+    
+    -- Direct lookup
+    if assets.coldBiomes[biome] then return true end
+    
+    -- Check for keywords that indicate cold biome
+    local coldKeywords = {"snow", "frozen", "ice", "frost", "cold", "arctic", "polar", "glacier", "tundra"}
+    for _, keyword in ipairs(coldKeywords) do
+        if biome:find(keyword) then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Weather conversion maps
+local snowToRain = {
+    lightsnow = "lightrain",
+    snow = "rain",
+    blizzard = "storm"
+}
+
+local rainToSnow = {
+    lightrain = "lightsnow",
+    rain = "snow",
+    heavyrain = "blizzard",
+    storm = "blizzard"
+}
+
+-- Convert weather state based on biome
+-- If biome is cold: rain -> snow
+-- If biome is warm: snow -> rain
+function assets.convertWeatherForBiome(state, biome)
+    if not state then return "clear" end
+    
+    local isCold = assets.isColdBiome(biome)
+    
+    if isCold then
+        -- Cold biome: convert rain to snow
+        return rainToSnow[state] or state
+    else
+        -- Warm biome: convert snow to rain
+        return snowToRain[state] or state
+    end
+end
+
+-- Get display-ready weather state (converts based on biome)
+function assets.getDisplayState(state, biome)
+    return assets.convertWeatherForBiome(state, biome)
+end
+
 return assets

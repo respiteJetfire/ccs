@@ -131,7 +131,9 @@ function renderer.drawCurrentPage(forecast)
     end
     
     local current = forecast.current
-    local state = current.state or "clear"
+    local biome = forecast.stationBiome
+    -- Convert weather state based on biome (snow only in cold biomes)
+    local state = assets.convertWeatherForBiome(current.state or "clear", biome)
     local weatherColor = assets.getWeatherColor(state)
     
     -- Draw large icon
@@ -183,6 +185,7 @@ function renderer.draw24HourPage(forecast)
     renderer.drawLine(4, "-", assets.colors.textSecondary, assets.colors.background)
     
     local hourlyData = forecast.hourly
+    local biome = forecast.stationBiome
     if not hourlyData or #hourlyData == 0 then
         renderer.drawCenteredText(8, "No hourly forecast available", assets.colors.textWarning)
         return
@@ -205,8 +208,8 @@ function renderer.draw24HourPage(forecast)
                 local hourStr = string.format("%02d:00", hourForecast.hour)
                 renderer.drawText(x, rowY, hourStr, assets.colors.textSecondary, assets.colors.background)
                 
-                -- Weather symbol with color
-                local state = hourForecast.predictedState or "clear"
+                -- Weather symbol with color - convert based on biome
+                local state = assets.convertWeatherForBiome(hourForecast.predictedState or "clear", biome)
                 local symbol = assets.getWeatherSymbol(state)
                 local color = assets.getWeatherColor(state)
                 renderer.drawText(x, rowY + 1, symbol .. symbol .. symbol, color, assets.colors.background)
@@ -240,6 +243,7 @@ function renderer.draw5DayPage(forecast)
     renderer.drawLine(4, "-", assets.colors.textSecondary, assets.colors.background)
     
     local fiveDayData = forecast.fiveDay
+    local biome = forecast.stationBiome
     if not fiveDayData or #fiveDayData == 0 then
         renderer.drawCenteredText(8, "No 5-day forecast available", assets.colors.textWarning)
         return
@@ -260,8 +264,8 @@ function renderer.draw5DayPage(forecast)
             end
             renderer.drawText(x, y, dayName, assets.colors.textHighlight, assets.colors.background)
             
-            -- Weather symbol row
-            local state = dayForecast.predictedState or "clear"
+            -- Weather symbol row - convert based on biome
+            local state = assets.convertWeatherForBiome(dayForecast.predictedState or "clear", biome)
             local symbol = assets.getWeatherSymbol(state)
             local color = assets.getWeatherColor(state)
             renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, assets.colors.background)
@@ -337,13 +341,14 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
             
             -- Get station forecast if available
             local stationId = tostring(station.id)
+            local stationBiome = station.biome
             local stationForecast = forecast.stationForecasts and forecast.stationForecasts[stationId]
             
             if stationForecast and stationForecast.hourly and stationForecast.hourly[1] then
                 local current = stationForecast.hourly[1]
                 
-                -- Weather symbol
-                local state = current.predictedState or "clear"
+                -- Weather symbol - convert based on station's biome
+                local state = assets.convertWeatherForBiome(current.predictedState or "clear", stationBiome)
                 local symbol = assets.getWeatherSymbol(state)
                 local color = assets.getWeatherColor(state)
                 renderer.drawText(26, y, symbol, color, assets.colors.background)
