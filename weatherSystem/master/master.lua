@@ -1,7 +1,7 @@
 -- weatherSystem/master/master.lua
 -- Weather Master Controller
 -- Receives data from stations, stores in DB, generates forecasts
-local version = "1.0.0"
+local version = "1.2.0"
 
 print("[INFO] Weather Master v" .. version .. " starting...")
 
@@ -92,17 +92,21 @@ local function updateForecast()
     
     currentForecast = forecast.generate(historyData, latestData)
     
-    -- Calculate Celsius temperature and add to forecast data
+    -- Calculate Celsius temperature and humidity, add to forecast data
     if currentForecast.current and currentForecast.current.data then
         local tempC = forecast.getTemperatureCelsius(currentForecast.current.data)
         currentForecast.current.data.temperatureCelsius = tempC
+        
+        local humidity = forecast.getHumidityPercent(currentForecast.current.data)
+        currentForecast.current.data.humidityPercent = humidity
     end
     
     db.saveForecast(currentForecast)
     
     print("[FORECAST] Updated: " .. currentForecast.summary)
     if currentForecast.current and currentForecast.current.data then
-        print("[FORECAST] Temperature: " .. tostring(currentForecast.current.data.temperatureCelsius) .. "°C")
+        print("[FORECAST] Temperature: " .. tostring(currentForecast.current.data.temperatureCelsius) .. "C")
+        print("[FORECAST] Humidity: " .. tostring(currentForecast.current.data.humidityPercent) .. "%")
     end
     return currentForecast
 end

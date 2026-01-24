@@ -1,6 +1,6 @@
 -- weatherSystem/display/display.lua
 -- Weather Display Unit - Weather Channel Style UI
-local version = "1.0.0"
+local version = "1.1.0"
 
 print("[INFO] Weather Display v" .. version .. " starting...")
 
@@ -14,7 +14,15 @@ local CONFIG = {
     REFRESH_INTERVAL = 5,       -- Refresh display every 5 seconds
     REQUEST_INTERVAL = 30,      -- Request new forecast every 30 seconds
     ANIMATION_SPEED = 0.5,      -- Animation frame delay
+    PAGE_CYCLE_TIME = 8,        -- Seconds per page when cycling
     USE_MONITOR = true          -- Use external monitor if available
+}
+
+-- Page types for cycling
+local PAGES = {
+    CURRENT = "current",        -- Current conditions
+    FORECAST = "forecast",      -- Forecast details
+    STATIONS = "stations"       -- Station info
 }
 
 -- Find monitor
@@ -49,6 +57,10 @@ local currentForecast = nil
 local currentStations = {}
 local lastRequestTime = 0
 local animationFrame = 1
+local currentPage = PAGES.CURRENT
+local currentStationIndex = 1
+local pageList = {PAGES.CURRENT, PAGES.FORECAST, PAGES.STATIONS}
+local currentPageIndex = 1
 
 -- Request forecast from master
 local function requestForecast()
@@ -95,7 +107,6 @@ local function animationLoop()
         if currentForecast and currentForecast.current then
             local state = currentForecast.current.state
             if state == "rain" or state == "storm" or state == "thunder" then
-                -- Animate rain
                 animationFrame = (animationFrame % #assets.rainFrames) + 1
             end
         end
@@ -103,11 +114,32 @@ local function animationLoop()
     end
 end
 
+-- Page cycling loop
+local function pageCycleLoop()
+    while true do
+        sleep(CONFIG.PAGE_CYCLE_TIME)
+        
+        -- Cycle to next page
+        currentPageIndex = currentPageIndex + 1
+        if currentPageIndex > #pageList then
+            currentPageIndex = 1
+            -- Also cycle stations when we loop back
+            if #currentStations > 1 then
+                currentStationIndex = currentStationIndex + 1
+                if currentStationIndex > #currentStations then
+                    currentStationIndex = 1
+                end
+            end
+        end
+        currentPage = pageList[currentPageIndex]
+    end
+end
+
 -- Display update loop
 local function displayLoop()
     while true do
         if currentForecast then
-            renderer.render(currentForecast, currentStations)
+            renderer.renderPage(currentForecast, currentStations, currentPage, currentStationIndex)
         else
             drawLoadingScreen()
         end
@@ -122,7 +154,6 @@ local function receiveLoop()
         if data then
             processForecast(data)
         else
-            -- No data received, might be offline
             if not currentForecast then
                 drawOfflineScreen()
             end
@@ -132,7 +163,6 @@ end
 
 -- Request loop
 local function requestLoop()
-    -- Initial request
     requestForecast()
     
     while true do
@@ -151,21 +181,37 @@ local function inputLoop()
         elseif key == keys.r then
             print("[INFO] Manual refresh requested")
             requestForecast()
+        elseif key == keys.n or key == keys.right then
+            -- Next page
+            currentPageIndex = currentPageIndex + 1
+            if currentPageIndex > #pageList then currentPageIndex = 1 end
+            currentPage = pageList[currentPageIndex]
+            print("[INFO] Page: " .. currentPage)
+        elseif key == keys.p or key == keys.left then
+            -- Previous page
+            currentPageIndex = currentPageIndex - 1
+            if currentPageIndex < 1 then currentPageIndex = #pageList end
+            currentPage = pageList[currentPageIndex]
+            print("[INFO] Page: " .. currentPage)
+        elseif key == keys.s then
+            -- Next station
+            if #currentStations > 0 then
+                currentStationIndex = currentStationIndex + 1
+                if currentStationIndex > #currentStations then currentStationIndex = 1 end
+                print("[INFO] Station: " .. currentStationIndex)
+            end
         end
     end
 end
 
 -- Main entry point
 print("[INFO] Weather Display running...")
-print("[INFO] Press 'Q' to quit, 'R' to refresh")
+print("[INFO] Keys: Q=quit, R=refresh, N/Right=next page, P/Left=prev page, S=next station")
 
--- Show loading screen
 drawLoadingScreen()
 
--- Run all loops in parallel
-parallel.waitForAny(displayLoop, receiveLoop, requestLoop, animationLoop, inputLoop)
+parallel.waitForAny(displayLoop, receiveLoop, requestLoop, animationLoop, inputLoop, pageCycleLoop)
 
--- Cleanup
 network.close()
 renderer.clear()
 print("[INFO] Weather Display stopped")
