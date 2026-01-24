@@ -1,6 +1,6 @@
 -- weatherSystem/display/ui_assets.lua
 -- UI Assets - Icons and Color Palettes for Weather Display
-local version = "1.0.0"
+local version = "2.0.0"
 
 local assets = {}
 
@@ -26,6 +26,7 @@ assets.colors = {
     rain = colors.cyan,
     storm = colors.blue,
     thunder = colors.purple,
+    snow = colors.white,
     
     -- Temperature colors
     freezing = colors.lightBlue,
@@ -62,6 +63,11 @@ assets.icons = {
         " ___ ",
         "(__/|",
         "  / "
+    },
+    snow = {
+        " ___ ",
+        "(___)  ",
+        "* * * "
     },
     unknown = {
         " ??? ",
@@ -106,6 +112,13 @@ assets.largeIcons = {
         " (__/|___)   ",
         "    /|       ",
         "   /         "
+    },
+    snow = {
+        "   _____     ",
+        "  (     )    ",
+        " (________)  ",
+        " *  *  *  *  ",
+        "  *  *  *  * "
     }
 }
 
@@ -152,6 +165,12 @@ assets.descriptions = {
         "Lightning possible",
         "Severe storms",
         "Take shelter"
+    },
+    snow = {
+        "Snow expected",
+        "Winter conditions",
+        "Bundle up",
+        "Snowy weather"
     }
 }
 
@@ -171,17 +190,18 @@ function assets.getWeatherColor(state)
         cloudy = assets.colors.cloudy,
         rain = assets.colors.rain,
         storm = assets.colors.storm,
-        thunder = assets.colors.thunder
+        thunder = assets.colors.thunder,
+        snow = assets.colors.snow
     }
     return stateColors[state] or assets.colors.textPrimary
 end
 
 -- Get color for temperature (Celsius scale)
 function assets.getTemperatureColor(tempC)
-    if tempC < 0 then return assets.colors.freezing
-    elseif tempC < 5 then return assets.colors.cold
-    elseif tempC < 15 then return assets.colors.cool
-    elseif tempC < 22 then return assets.colors.mild
+    if tempC < -10 then return assets.colors.freezing
+    elseif tempC < 0 then return assets.colors.cold
+    elseif tempC < 10 then return assets.colors.cool
+    elseif tempC < 20 then return assets.colors.mild
     elseif tempC < 30 then return assets.colors.warm
     else return assets.colors.hot
     end

@@ -1,6 +1,7 @@
 -- weatherSystem/display/display.lua
 -- Weather Display Unit - Weather Channel Style UI
-local version = "1.2.0"
+-- Now with 24-hour and 5-day forecast pages
+local version = "3.0.0"
 
 print("[INFO] Weather Display v" .. version .. " starting...")
 
@@ -18,10 +19,11 @@ local CONFIG = {
     USE_MONITOR = true          -- Use external monitor if available
 }
 
--- Page types for cycling
+-- Page types for cycling (added hourly and fiveday)
 local PAGES = {
     CURRENT = "current",        -- Current conditions
-    FORECAST = "forecast",      -- Forecast details
+    HOURLY = "hourly",          -- 24-hour forecast
+    FIVEDAY = "fiveday",        -- 5-day forecast
     STATIONS = "stations"       -- Station info
 }
 
@@ -60,7 +62,7 @@ local lastRequestTime = 0
 local animationFrame = 1
 local currentPage = PAGES.CURRENT
 local currentStationIndex = 1
-local pageList = {PAGES.CURRENT, PAGES.FORECAST, PAGES.STATIONS}
+local pageList = {PAGES.CURRENT, PAGES.HOURLY, PAGES.FIVEDAY, PAGES.STATIONS}
 local currentPageIndex = 1
 
 -- Request forecast from master
@@ -230,6 +232,7 @@ end
 -- Main entry point
 print("[INFO] Weather Display running...")
 print("[INFO] Keys: Q=quit, R=refresh, N/Right=next page, P/Left=prev page, S=next station")
+print("[INFO] Pages: Current -> 24-Hour -> 5-Day -> Stations")
 
 drawLoadingScreen()
 

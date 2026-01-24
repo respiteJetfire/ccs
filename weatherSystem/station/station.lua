@@ -1,6 +1,6 @@
 -- weatherSystem/station/station.lua
 -- Weather Station - Collects weather data and sends to master
-local version = "2.0.1"
+local version = "2.1.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -67,7 +67,9 @@ local function collectWeatherData()
         time = 0,
         day = 0,
         dimension = "minecraft:overworld",
-        difficulty = "normal"
+        difficulty = "normal",
+        altitude = 64,  -- Default sea level
+        position = {x = 0, y = 64, z = 0}
     }
     
     -- Collect from environment detector if available
@@ -132,8 +134,23 @@ local function collectWeatherData()
             if envDetector.getWorldDifficulty then
                 data.difficulty = envDetector.getWorldDifficulty()
             end
+            
+            -- Position/Altitude (try to get from detector or GPS)
+            if envDetector.getPos then
+                local pos = envDetector.getPos()
+                if pos then
+                    data.position = {x = pos.x or 0, y = pos.y or 64, z = pos.z or 0}
+                    data.altitude = pos.y or 64
+                    config.LOCATION.x = pos.x
+                    config.LOCATION.y = pos.y
+                    config.LOCATION.z = pos.z
+                end
+            end
         end)
     end
+    
+    -- Add station ID to data for tracking
+    data.stationId = config.STATION_ID
     
     return data
 end
@@ -201,7 +218,7 @@ local function sendLoop()
         
         -- Send heartbeat
         local heartbeat = weatherpacket.createHeartbeat(config.STATION_ID, config.STATION_NAME)
-        rednet.broadcast(weatherpacket.serialize(heartbeat), config.PROTOCOL)
+        rednet.broadcast(heartbeat, config.PROTOCOL)
         
         sleep(config.SEND_INTERVAL)
     end

@@ -1,6 +1,7 @@
 -- weatherSystem/master/forecast.lua
--- Weather Forecast Logic with Hourly Predictions and Weather Control
-local version = "2.1.0"
+-- Weather Forecast Logic with Per-Station Temperature Forecasting
+-- Includes 24-hour and 5-day forecasts with weather control enforcement
+local version = "3.0.0"
 
 local forecast = {}
 
@@ -15,7 +16,8 @@ forecast.WEATHER_STATES = {
     CLOUDY = "cloudy",
     RAIN = "rain",
     STORM = "storm",
-    THUNDER = "thunder"
+    THUNDER = "thunder",
+    SNOW = "snow"
 }
 
 -- Forecast confidence levels
@@ -30,93 +32,431 @@ local globalWeatherState = {
     isRaining = false,
     isThundering = false,
     rainStartTick = 0,
-    rainDuration = 0,        -- Duration in ticks
-    nextWeatherCheck = 0,    -- Next tick to check for weather change
-    currentRainChance = 15,  -- Base 15% chance per hour
-    hourlyForecasts = {}     -- Forecasts for next 24 hours
+    rainDuration = 0,
+    plannedDuration = 0,
+    nextWeatherCheck = 0,
+    currentRainChance = 15,
+    hourlyForecasts = {},
+    fiveDayForecasts = {},
+    lastCommandTick = 0
 }
 
--- Seasonal/time-based rain probability modifiers
-local function getSeasonalRainModifier(gameDay)
-    -- Simulate seasons over a 120-day cycle
-    local seasonLength = 30
+-- Station registry for distance calculations
+local stationRegistry = {}
+
+-- Season names
+local SEASONS = {"Spring", "Summer", "Autumn", "Winter"}
+
+-- Get current season (0-3)
+function forecast.getSeason(gameDay)
     local dayInCycle = gameDay % 120
-    
-    if dayInCycle < seasonLength then
-        -- Spring: higher rain chance
-        return 1.4
-    elseif dayInCycle < seasonLength * 2 then
-        -- Summer: moderate, with chance of storms
-        return 0.9
-    elseif dayInCycle < seasonLength * 3 then
-        -- Autumn: moderate rain
-        return 1.2
-    else
-        -- Winter: lower rain (snow in cold biomes)
-        return 0.7
+    return math.floor(dayInCycle / 30)
+end
+
+-- Get season name
+function forecast.getSeasonName(gameDay)
+    return SEASONS[forecast.getSeason(gameDay) + 1]
+end
+
+-- Biome base temperatures in Celsius
+local biomeTemperatures = {
+    ["minecraft:frozen_ocean"] = -15, ["minecraft:deep_frozen_ocean"] = -18,
+    ["minecraft:frozen_river"] = -10, ["minecraft:snowy_plains"] = -8,
+    ["minecraft:snowy_taiga"] = -12, ["minecraft:snowy_beach"] = -5,
+    ["minecraft:snowy_slopes"] = -15, ["minecraft:frozen_peaks"] = -20,
+    ["minecraft:jagged_peaks"] = -18, ["minecraft:ice_spikes"] = -20,
+    ["minecraft:grove"] = -10, ["minecraft:cold_ocean"] = 2,
+    ["minecraft:deep_cold_ocean"] = 0, ["minecraft:old_growth_pine_taiga"] = 5,
+    ["minecraft:old_growth_spruce_taiga"] = 4, ["minecraft:taiga"] = 8,
+    ["minecraft:windswept_hills"] = 6, ["minecraft:windswept_gravelly_hills"] = 5,
+    ["minecraft:windswept_forest"] = 7, ["minecraft:stony_shore"] = 10,
+    ["minecraft:ocean"] = 15, ["minecraft:deep_ocean"] = 12,
+    ["minecraft:lukewarm_ocean"] = 20, ["minecraft:deep_lukewarm_ocean"] = 18,
+    ["minecraft:river"] = 16, ["minecraft:beach"] = 22,
+    ["minecraft:plains"] = 18, ["minecraft:sunflower_plains"] = 20,
+    ["minecraft:meadow"] = 16, ["minecraft:forest"] = 17,
+    ["minecraft:flower_forest"] = 18, ["minecraft:birch_forest"] = 17,
+    ["minecraft:old_growth_birch_forest"] = 16, ["minecraft:dark_forest"] = 14,
+    ["minecraft:swamp"] = 22, ["minecraft:mangrove_swamp"] = 28,
+    ["minecraft:mushroom_fields"] = 18, ["minecraft:cherry_grove"] = 15,
+    ["minecraft:stony_peaks"] = 8, ["minecraft:warm_ocean"] = 26,
+    ["minecraft:jungle"] = 32, ["minecraft:sparse_jungle"] = 30,
+    ["minecraft:bamboo_jungle"] = 33, ["minecraft:savanna"] = 35,
+    ["minecraft:savanna_plateau"] = 32, ["minecraft:windswept_savanna"] = 30,
+    ["minecraft:desert"] = 42, ["minecraft:badlands"] = 45,
+    ["minecraft:wooded_badlands"] = 40, ["minecraft:eroded_badlands"] = 48,
+    ["minecraft:nether_wastes"] = 85, ["minecraft:soul_sand_valley"] = 60,
+    ["minecraft:crimson_forest"] = 75, ["minecraft:warped_forest"] = 70,
+    ["minecraft:basalt_deltas"] = 95, ["minecraft:the_end"] = -40,
+    ["minecraft:end_highlands"] = -45, ["minecraft:end_midlands"] = -42,
+    ["minecraft:small_end_islands"] = -50, ["minecraft:end_barrens"] = -55,
+    ["minecraft:dripstone_caves"] = 12, ["minecraft:lush_caves"] = 18,
+    ["minecraft:deep_dark"] = 8
+}
+
+-- Biome humidity values
+local biomeHumidity = {
+    ["minecraft:desert"] = 10, ["minecraft:badlands"] = 15,
+    ["minecraft:wooded_badlands"] = 20, ["minecraft:savanna"] = 25,
+    ["minecraft:frozen_ocean"] = 35, ["minecraft:snowy_plains"] = 45,
+    ["minecraft:forest"] = 60, ["minecraft:dark_forest"] = 70,
+    ["minecraft:swamp"] = 85, ["minecraft:mangrove_swamp"] = 92,
+    ["minecraft:jungle"] = 88, ["minecraft:ocean"] = 75,
+    ["minecraft:river"] = 70, ["minecraft:beach"] = 72,
+    ["minecraft:plains"] = 50, ["minecraft:meadow"] = 55
+}
+
+-- Check if biome is snowy
+local function isSnowyBiome(biome)
+    if not biome then return false end
+    local patterns = {"frozen", "snowy", "ice_spikes", "grove", "jagged_peaks", "frozen_peaks"}
+    local biomeLower = biome:lower()
+    for _, p in ipairs(patterns) do
+        if biomeLower:find(p) then return true end
     end
+    return false
+end
+
+-- Get seasonal rain modifier
+local function getSeasonalRainModifier(gameDay)
+    local season = forecast.getSeason(gameDay)
+    if season == 0 then return 1.4
+    elseif season == 1 then return 0.9
+    elseif season == 2 then return 1.2
+    else return 0.7 end
+end
+
+-- Get seasonal temperature modifier
+local function getSeasonalTempModifier(gameDay)
+    local season = forecast.getSeason(gameDay)
+    if season == 0 then return 2
+    elseif season == 1 then return 8
+    elseif season == 2 then return -2
+    else return -12 end
 end
 
 -- Get time-of-day rain modifier
 local function getTimeOfDayModifier(gameTime)
     local hour = math.floor(gameTime / forecast.TICKS_PER_HOUR) % 24
-    
-    -- Rain more likely in early morning (4-8) and evening (16-20)
-    if hour >= 4 and hour <= 8 then
-        return 1.3
-    elseif hour >= 16 and hour <= 20 then
-        return 1.25
-    elseif hour >= 12 and hour <= 14 then
-        -- Less likely at midday
-        return 0.7
-    end
+    if hour >= 4 and hour <= 8 then return 1.3
+    elseif hour >= 16 and hour <= 20 then return 1.25
+    elseif hour >= 12 and hour <= 14 then return 0.7 end
     return 1.0
 end
 
--- Calculate rain probability for a specific hour
+-- Register station for distance calculations
+function forecast.registerStation(stationId, stationData)
+    stationRegistry[tostring(stationId)] = {
+        id = stationId,
+        location = stationData.location,
+        biome = stationData.biome,
+        altitude = stationData.altitude or 64
+    }
+end
+
+-- Calculate distance between stations
+local function calculateStationDistance(station1Id, station2Id)
+    local s1 = stationRegistry[tostring(station1Id)]
+    local s2 = stationRegistry[tostring(station2Id)]
+    if not s1 or not s2 or not s1.location or not s2.location then return 0 end
+    local dx = (s1.location.x or 0) - (s2.location.x or 0)
+    local dz = (s1.location.z or 0) - (s2.location.z or 0)
+    return math.sqrt(dx * dx + dz * dz)
+end
+
+-- Get nearby station temperature influence (minor)
+local function getNearbyStationTempInfluence(stationId, stationTemps)
+    local influence, count = 0, 0
+    local maxDist = 1000
+    for otherId, temp in pairs(stationTemps or {}) do
+        if tostring(otherId) ~= tostring(stationId) then
+            local dist = calculateStationDistance(stationId, otherId)
+            if dist > 0 and dist < maxDist then
+                local weight = (maxDist - dist) / maxDist * 0.1
+                influence = influence + (temp - 15) * weight
+                count = count + 1
+            end
+        end
+    end
+    return count > 0 and (influence / count) or 0
+end
+
+-- Altitude temperature adjustment (-0.6C per 100 blocks above sea level)
+local function getAltitudeTemperatureAdjustment(altitude)
+    local seaLevel = 63
+    local heightAboveSea = (altitude or seaLevel) - seaLevel
+    return -(heightAboveSea / 100) * 6
+end
+
+-- Calculate rain probability for hour
 function forecast.calculateHourlyRainChance(gameDay, hour, previousHourRaining)
-    local baseChance = 15  -- 15% base chance
-    
-    -- Apply modifiers
+    local baseChance = 15
     local seasonMod = getSeasonalRainModifier(gameDay)
     local timeMod = getTimeOfDayModifier(hour * forecast.TICKS_PER_HOUR)
-    
-    -- Weather persistence: if it was raining, higher chance to continue
-    local persistenceMod = 1.0
-    if previousHourRaining then
-        persistenceMod = 2.5  -- 2.5x more likely to continue raining
-    end
-    
-    -- Weather front simulation: random pressure system
-    local pressureMod = 0.8 + math.random() * 0.4  -- 0.8 to 1.2
-    
+    local persistenceMod = previousHourRaining and 2.5 or 1.0
+    local pressureMod = 0.8 + math.random() * 0.4
     local finalChance = baseChance * seasonMod * timeMod * persistenceMod * pressureMod
-    
-    -- Clamp between 5% and 85%
     return math.max(5, math.min(85, math.floor(finalChance)))
 end
 
--- Calculate thunder probability (only when raining)
+-- Calculate thunder probability
 function forecast.calculateThunderChance(rainChance, gameDay)
     if rainChance < 30 then return 0 end
-    
-    -- Thunder is rarer, mostly in summer
-    local seasonLength = 30
-    local dayInCycle = gameDay % 120
-    
-    local thunderBase = 10
-    if dayInCycle >= seasonLength and dayInCycle < seasonLength * 2 then
-        -- Summer: much higher thunder chance
-        thunderBase = 35
-    end
-    
-    -- Thunder more likely with heavy rain
-    local intensityMod = rainChance / 50
-    
-    return math.floor(thunderBase * intensityMod)
+    local season = forecast.getSeason(gameDay)
+    local thunderBase = season == 1 and 35 or 10
+    return math.floor(thunderBase * (rainChance / 50))
 end
 
--- Generate hourly forecasts for next 24 hours
+-- Calculate per-station temperature for specific hour
+function forecast.calculateStationTemperature(stationData, gameDay, hour, isRaining, rainLevel, stationTemps)
+    local biome = stationData and stationData.biome or "minecraft:plains"
+    local altitude = stationData and stationData.altitude or 64
+    local stationId = stationData and stationData.id
+    
+    -- Base biome temperature
+    local baseTemp = biomeTemperatures[biome] or 15
+    
+    -- Seasonal adjustment
+    local seasonMod = getSeasonalTempModifier(gameDay)
+    
+    -- Time of day variation
+    local hourNorm = hour / 24
+    local timeVariation = math.cos((hourNorm - 0.25) * 2 * math.pi) * 8
+    
+    -- Altitude adjustment
+    local altitudeAdj = getAltitudeTemperatureAdjustment(altitude)
+    
+    -- Weather effects
+    local weatherAdj = 0
+    if isRaining then
+        local intensity = rainLevel or 0.5
+        weatherAdj = -(3 + intensity * 5)
+        if isSnowyBiome(biome) or baseTemp < 0 then
+            weatherAdj = weatherAdj - 5
+        end
+    end
+    
+    -- Nearby station influence
+    local stationInfluence = 0
+    if stationId then
+        stationInfluence = getNearbyStationTempInfluence(stationId, stationTemps)
+    end
+    
+    -- Random daily variation
+    local dailyVariation = (math.random() - 0.5) * 4
+    
+    local finalTemp = baseTemp + seasonMod + timeVariation + altitudeAdj + weatherAdj + stationInfluence + dailyVariation
+    
+    -- Extra cold for high altitude snowy biomes
+    if isSnowyBiome(biome) and altitude > 100 then
+        finalTemp = finalTemp - ((altitude - 100) / 50) * 2
+    end
+    
+    return math.floor(finalTemp)
+end
+
+-- Determine weather type based on temperature
+function forecast.getWeatherType(temp, isRaining, isThundering)
+    if not isRaining then return forecast.WEATHER_STATES.CLEAR end
+    if isThundering then return forecast.WEATHER_STATES.THUNDER end
+    if temp <= 0 then return forecast.WEATHER_STATES.SNOW end
+    return forecast.WEATHER_STATES.RAIN
+end
+
+-- Generate 24-hour forecast for a station
+function forecast.generate24HourForecast(stationData, gameDay, currentHour)
+    local forecasts = {}
+    local wasRaining = globalWeatherState.isRaining
+    local stationTemps = {}
+    
+    for i = 0, 23 do
+        local forecastHour = (currentHour + i) % 24
+        local forecastDay = gameDay + math.floor((currentHour + i) / 24)
+        
+        local rainChance = forecast.calculateHourlyRainChance(forecastDay, forecastHour, wasRaining)
+        local thunderChance = forecast.calculateThunderChance(rainChance, forecastDay)
+        
+        local willRain = math.random(100) <= rainChance
+        local willThunder = willRain and math.random(100) <= thunderChance
+        local rainLevel = willRain and (0.3 + math.random() * 0.7) or 0
+        
+        local temp = forecast.calculateStationTemperature(stationData, forecastDay, forecastHour, willRain, rainLevel, stationTemps)
+        
+        local state = forecast.WEATHER_STATES.CLEAR
+        if willThunder then state = forecast.WEATHER_STATES.THUNDER
+        elseif willRain then state = forecast.getWeatherType(temp, true, false)
+        elseif rainChance > 40 then state = forecast.WEATHER_STATES.CLOUDY end
+        
+        local confidence = forecast.CONFIDENCE.HIGH
+        if i > 12 then confidence = forecast.CONFIDENCE.LOW
+        elseif i > 6 then confidence = forecast.CONFIDENCE.MEDIUM end
+        
+        forecasts[i] = {
+            hour = forecastHour,
+            hoursFromNow = i,
+            day = forecastDay,
+            temperature = temp,
+            rainChance = rainChance,
+            thunderChance = thunderChance,
+            predictedState = state,
+            willRain = willRain,
+            willThunder = willThunder,
+            rainLevel = rainLevel,
+            confidence = confidence,
+            isDay = forecastHour >= 6 and forecastHour < 18
+        }
+        
+        wasRaining = willRain
+        stationTemps[stationData and stationData.id or "default"] = temp
+    end
+    
+    return forecasts
+end
+
+-- Generate 5-day forecast for a station
+function forecast.generate5DayForecast(stationData, gameDay)
+    local forecasts = {}
+    
+    for day = 0, 4 do
+        local forecastDay = gameDay + day
+        local dayTemps, dayRainChances = {}, {}
+        
+        for hour = 0, 23, 3 do
+            local hourForecast = forecast.generate24HourForecast(stationData, forecastDay, hour)
+            if hourForecast[0] then
+                table.insert(dayTemps, hourForecast[0].temperature)
+                table.insert(dayRainChances, hourForecast[0].rainChance)
+            end
+        end
+        
+        local avgRainChance, highTemp, lowTemp = 0, -999, 999
+        for _, rc in ipairs(dayRainChances) do avgRainChance = avgRainChance + rc end
+        avgRainChance = #dayRainChances > 0 and math.floor(avgRainChance / #dayRainChances) or 20
+        
+        for _, t in ipairs(dayTemps) do
+            if t > highTemp then highTemp = t end
+            if t < lowTemp then lowTemp = t end
+        end
+        if highTemp == -999 then highTemp = 15 end
+        if lowTemp == 999 then lowTemp = 10 end
+        
+        local state = forecast.WEATHER_STATES.CLEAR
+        if avgRainChance > 60 then state = forecast.WEATHER_STATES.RAIN
+        elseif avgRainChance > 40 then state = forecast.WEATHER_STATES.CLOUDY end
+        
+        if lowTemp <= 0 and avgRainChance > 40 then state = forecast.WEATHER_STATES.SNOW end
+        
+        local confidence = forecast.CONFIDENCE.HIGH
+        if day > 3 then confidence = forecast.CONFIDENCE.LOW
+        elseif day > 1 then confidence = forecast.CONFIDENCE.MEDIUM end
+        
+        local dayName = day == 0 and "Today" or (day == 1 and "Tomorrow" or ("Day " .. tostring(forecastDay % 7 + 1)))
+        
+        forecasts[day] = {
+            day = forecastDay,
+            daysFromNow = day,
+            dayName = dayName,
+            highTemp = highTemp,
+            lowTemp = lowTemp,
+            rainChance = avgRainChance,
+            predictedState = state,
+            confidence = confidence,
+            season = forecast.getSeasonName(forecastDay)
+        }
+    end
+    
+    return forecasts
+end
+
+-- Check and apply weather changes using commands API with duration
+function forecast.checkAndApplyWeather(currentTick, gameDay)
+    if currentTick < globalWeatherState.nextWeatherCheck then return nil end
+    if currentTick - globalWeatherState.lastCommandTick < 500 then return nil end
+    
+    globalWeatherState.nextWeatherCheck = currentTick + forecast.TICKS_PER_HOUR
+    
+    local hourForecast = globalWeatherState.hourlyForecasts[0]
+    if not hourForecast then
+        forecast.generateHourlyForecasts(currentTick, gameDay)
+        hourForecast = globalWeatherState.hourlyForecasts[0]
+    end
+    
+    local weatherChanged = false
+    local newState, command = nil, nil
+    local duration = 0
+    
+    local roll = math.random(100)
+    local shouldRain = roll <= hourForecast.rainChance
+    local shouldThunder = shouldRain and math.random(100) <= hourForecast.thunderChance
+    
+    -- Calculate duration from consecutive hours
+    local durationHours = 1
+    for i = 1, 12 do
+        local futureHour = globalWeatherState.hourlyForecasts[i]
+        if futureHour and futureHour.willRain == shouldRain then
+            durationHours = durationHours + 1
+        else break end
+    end
+    duration = durationHours * 1000
+    
+    if shouldThunder and not globalWeatherState.isThundering then
+        command = "weather thunder " .. tostring(duration)
+        globalWeatherState.isRaining = true
+        globalWeatherState.isThundering = true
+        globalWeatherState.plannedDuration = duration
+        newState = forecast.WEATHER_STATES.THUNDER
+        weatherChanged = true
+    elseif shouldRain and not globalWeatherState.isRaining then
+        command = "weather rain " .. tostring(duration)
+        globalWeatherState.isRaining = true
+        globalWeatherState.isThundering = false
+        globalWeatherState.plannedDuration = duration
+        newState = forecast.WEATHER_STATES.RAIN
+        weatherChanged = true
+    elseif not shouldRain and globalWeatherState.isRaining then
+        command = "weather clear " .. tostring(duration)
+        globalWeatherState.isRaining = false
+        globalWeatherState.isThundering = false
+        globalWeatherState.plannedDuration = duration
+        newState = forecast.WEATHER_STATES.CLEAR
+        weatherChanged = true
+    elseif globalWeatherState.isThundering and not shouldThunder and shouldRain then
+        command = "weather rain " .. tostring(duration)
+        globalWeatherState.isThundering = false
+        globalWeatherState.plannedDuration = duration
+        newState = forecast.WEATHER_STATES.RAIN
+        weatherChanged = true
+    end
+    
+    if command and commands then
+        globalWeatherState.lastCommandTick = currentTick
+        local success, result = pcall(function()
+            return commands.exec(command)
+        end)
+        if success then
+            print("[WEATHER] Executed: " .. command)
+        else
+            print("[WEATHER] Command failed: " .. tostring(result))
+        end
+    elseif command then
+        print("[WEATHER] Would execute: " .. command .. " (no commands API)")
+    end
+    
+    if weatherChanged then
+        forecast.generateHourlyForecasts(currentTick, gameDay)
+    end
+    
+    return {
+        changed = weatherChanged,
+        command = command,
+        newState = newState,
+        duration = duration,
+        currentRainChance = hourForecast.rainChance,
+        currentThunderChance = hourForecast.thunderChance
+    }
+end
+
+-- Generate global hourly forecasts
 function forecast.generateHourlyForecasts(currentGameTime, gameDay)
     local forecasts = {}
     local currentHour = math.floor(currentGameTime / forecast.TICKS_PER_HOUR) % 24
@@ -129,30 +469,17 @@ function forecast.generateHourlyForecasts(currentGameTime, gameDay)
         local rainChance = forecast.calculateHourlyRainChance(forecastDay, forecastHour, wasRaining)
         local thunderChance = forecast.calculateThunderChance(rainChance, forecastDay)
         
-        -- Determine predicted state
         local willRain = math.random(100) <= rainChance
         local willThunder = willRain and math.random(100) <= thunderChance
         
         local state = forecast.WEATHER_STATES.CLEAR
-        if willThunder then
-            state = forecast.WEATHER_STATES.THUNDER
-        elseif willRain then
-            if rainChance > 60 then
-                state = forecast.WEATHER_STATES.STORM
-            else
-                state = forecast.WEATHER_STATES.RAIN
-            end
-        elseif rainChance > 40 then
-            state = forecast.WEATHER_STATES.CLOUDY
-        end
+        if willThunder then state = forecast.WEATHER_STATES.THUNDER
+        elseif willRain then state = rainChance > 60 and forecast.WEATHER_STATES.STORM or forecast.WEATHER_STATES.RAIN
+        elseif rainChance > 40 then state = forecast.WEATHER_STATES.CLOUDY end
         
-        -- Confidence based on how far out the prediction is
         local confidence = forecast.CONFIDENCE.HIGH
-        if i > 12 then
-            confidence = forecast.CONFIDENCE.LOW
-        elseif i > 6 then
-            confidence = forecast.CONFIDENCE.MEDIUM
-        end
+        if i > 12 then confidence = forecast.CONFIDENCE.LOW
+        elseif i > 6 then confidence = forecast.CONFIDENCE.MEDIUM end
         
         forecasts[i] = {
             hour = forecastHour,
@@ -163,7 +490,8 @@ function forecast.generateHourlyForecasts(currentGameTime, gameDay)
             predictedState = state,
             willRain = willRain,
             willThunder = willThunder,
-            confidence = confidence
+            confidence = confidence,
+            isDay = forecastHour >= 6 and forecastHour < 18
         }
         
         wasRaining = willRain
@@ -173,99 +501,18 @@ function forecast.generateHourlyForecasts(currentGameTime, gameDay)
     return forecasts
 end
 
--- Check and apply weather changes using commands API
-function forecast.checkAndApplyWeather(currentTick, gameDay)
-    -- Only check once per hour (1000 ticks)
-    if currentTick < globalWeatherState.nextWeatherCheck then
-        return nil
-    end
-    
-    globalWeatherState.nextWeatherCheck = currentTick + forecast.TICKS_PER_HOUR
-    
-    local currentHour = math.floor(currentTick / forecast.TICKS_PER_HOUR) % 24
-    local hourForecast = globalWeatherState.hourlyForecasts[0]  -- Current hour
-    
-    if not hourForecast then
-        -- Generate new forecasts if needed
-        forecast.generateHourlyForecasts(currentTick, gameDay)
-        hourForecast = globalWeatherState.hourlyForecasts[0]
-    end
-    
-    local weatherChanged = false
-    local newState = nil
-    local command = nil
-    
-    -- Roll for weather change based on forecast
-    local roll = math.random(100)
-    local shouldRain = roll <= hourForecast.rainChance
-    local shouldThunder = shouldRain and math.random(100) <= hourForecast.thunderChance
-    
-    -- Determine if weather state needs to change
-    if shouldThunder and not globalWeatherState.isThundering then
-        command = "weather thunder"
-        globalWeatherState.isRaining = true
-        globalWeatherState.isThundering = true
-        newState = forecast.WEATHER_STATES.THUNDER
-        weatherChanged = true
-    elseif shouldRain and not globalWeatherState.isRaining then
-        command = "weather rain"
-        globalWeatherState.isRaining = true
-        globalWeatherState.isThundering = false
-        newState = forecast.WEATHER_STATES.RAIN
-        weatherChanged = true
-    elseif not shouldRain and globalWeatherState.isRaining then
-        command = "weather clear"
-        globalWeatherState.isRaining = false
-        globalWeatherState.isThundering = false
-        newState = forecast.WEATHER_STATES.CLEAR
-        weatherChanged = true
-    elseif globalWeatherState.isThundering and not shouldThunder and shouldRain then
-        -- Downgrade from thunder to rain
-        command = "weather rain"
-        globalWeatherState.isThundering = false
-        newState = forecast.WEATHER_STATES.RAIN
-        weatherChanged = true
-    end
-    
-    -- Execute command if available
-    if command and commands then
-        local success, result = pcall(function()
-            return commands.exec(command)
-        end)
-        if success then
-            print("[WEATHER] Executed: " .. command)
-        else
-            print("[WEATHER] Command API not available or failed: " .. tostring(result))
-        end
-    elseif command then
-        print("[WEATHER] Would execute: " .. command .. " (commands API not available)")
-    end
-    
-    -- Regenerate forecasts after weather change
-    if weatherChanged then
-        forecast.generateHourlyForecasts(currentTick, gameDay)
-    end
-    
-    return {
-        changed = weatherChanged,
-        command = command,
-        newState = newState,
-        currentRainChance = hourForecast.rainChance,
-        currentThunderChance = hourForecast.thunderChance
-    }
-end
-
 -- Get global weather state
 function forecast.getGlobalWeatherState()
     return {
         isRaining = globalWeatherState.isRaining,
         isThundering = globalWeatherState.isThundering,
         currentRainChance = globalWeatherState.currentRainChance,
+        plannedDuration = globalWeatherState.plannedDuration,
         hourlyForecasts = globalWeatherState.hourlyForecasts
     }
 end
 
--- Set global weather state from station data (sync)
+-- Sync from station data
 function forecast.syncFromStationData(stationData)
     if stationData then
         globalWeatherState.isRaining = stationData.isRaining == true
@@ -273,196 +520,171 @@ function forecast.syncFromStationData(stationData)
     end
 end
 
--- Determine current weather state from global state or station data
+-- Get current weather state
 local function getCurrentState(latestData)
-    -- Use global weather state first (it's authoritative)
-    if globalWeatherState.isThundering then
-        return forecast.WEATHER_STATES.THUNDER
-    elseif globalWeatherState.isRaining then
-        return forecast.WEATHER_STATES.RAIN
-    end
+    if globalWeatherState.isThundering then return forecast.WEATHER_STATES.THUNDER
+    elseif globalWeatherState.isRaining then return forecast.WEATHER_STATES.RAIN end
     
-    -- Fall back to station data
     if latestData and latestData.data then
         local data = latestData.data
-        if data.isThundering == true then
-            return forecast.WEATHER_STATES.THUNDER
-        end
+        if data.isThundering == true then return forecast.WEATHER_STATES.THUNDER end
         if data.isRaining == true then
-            if data.rainLevel and data.rainLevel > 0.7 then
-                return forecast.WEATHER_STATES.STORM
-            end
+            if data.rainLevel and data.rainLevel > 0.7 then return forecast.WEATHER_STATES.STORM end
             return forecast.WEATHER_STATES.RAIN
         end
-        if data.humidity and data.humidity > 0.6 then
-            return forecast.WEATHER_STATES.CLOUDY
-        end
     end
-    
     return forecast.WEATHER_STATES.CLEAR
 end
 
--- Get time of day symbol
-local function getTimeSymbol(gameTime)
-    local hour = math.floor(gameTime / forecast.TICKS_PER_HOUR) % 24
-    -- Day: 6-18, Night: 18-6
-    if hour >= 6 and hour < 18 then
-        return "Day", "sun"
-    else
-        return "Night", "moon"
-    end
-end
-
--- Convert hourly forecasts to legacy prediction format
-local function convertToLegacyPredictions(hourlyForecasts, currentTemp, currentGameTime)
-    local predictions = {}
-    local baseTemp = currentTemp or 15
-    
-    -- Convert to 3 periods: next 2 hours, next 6 hours, next 12 hours
-    local periods = {
-        {name = "Next 2 Hours", hours = {0, 1}},
-        {name = "Next 6 Hours", hours = {2, 3, 4, 5}},
-        {name = "Next 12 Hours", hours = {6, 7, 8, 9, 10, 11}}
-    }
-    
-    for i, period in ipairs(periods) do
-        local rainSum = 0
-        local thunderSum = 0
-        local count = 0
-        local avgHour = 0
-        
-        for _, h in ipairs(period.hours) do
-            local hf = hourlyForecasts[h]
-            if hf then
-                rainSum = rainSum + hf.rainChance
-                thunderSum = thunderSum + hf.thunderChance
-                avgHour = avgHour + hf.hour
-                count = count + 1
-            end
-        end
-        
-        local avgRain = count > 0 and (rainSum / count) or 15
-        local avgThunder = count > 0 and (thunderSum / count) or 0
-        avgHour = count > 0 and math.floor(avgHour / count) or 12
-        
-        local state = forecast.WEATHER_STATES.CLEAR
-        if avgThunder > 25 then
-            state = forecast.WEATHER_STATES.THUNDER
-        elseif avgRain > 50 then
-            state = forecast.WEATHER_STATES.RAIN
-        elseif avgRain > 30 then
-            state = forecast.WEATHER_STATES.CLOUDY
-        end
-        
-        local confidence = forecast.CONFIDENCE.HIGH
-        if i == 2 then confidence = forecast.CONFIDENCE.MEDIUM
-        elseif i == 3 then confidence = forecast.CONFIDENCE.LOW end
-        
-        -- Temperature variation based on weather
-        local tempVariation = math.random(-2 * i, 2 * i)
-        if state == forecast.WEATHER_STATES.RAIN then
-            tempVariation = tempVariation - math.random(2, 5)
-        elseif state == forecast.WEATHER_STATES.THUNDER then
-            tempVariation = tempVariation - math.random(3, 7)
-        end
-        
-        -- Get time of day for this prediction
-        local futureTime = (currentGameTime + (period.hours[1] or 0) * forecast.TICKS_PER_HOUR) % forecast.TICKS_PER_DAY
-        local timeOfDay, timeSymbol = getTimeSymbol(futureTime)
-        
-        table.insert(predictions, {
-            period = i,
-            periodName = period.name,
-            state = state,
-            confidence = confidence,
-            rainChance = math.floor(avgRain),
-            thunderChance = math.floor(avgThunder),
-            temperature = baseTemp + tempVariation,
-            timeOfDay = timeOfDay,
-            timeSymbol = timeSymbol,
-            hour = avgHour
-        })
-    end
-    
-    return predictions
-end
-
--- Generate human-readable summary
+-- Generate summary
 function forecast.generateSummary(currentState, predictions, hourlyForecasts)
-    local stateDescriptions = {
+    local stateDesc = {
         [forecast.WEATHER_STATES.CLEAR] = "Clear skies",
-        [forecast.WEATHER_STATES.CLOUDY] = "Cloudy conditions",
+        [forecast.WEATHER_STATES.CLOUDY] = "Cloudy",
         [forecast.WEATHER_STATES.RAIN] = "Rain",
         [forecast.WEATHER_STATES.STORM] = "Heavy storms",
-        [forecast.WEATHER_STATES.THUNDER] = "Thunderstorms"
+        [forecast.WEATHER_STATES.THUNDER] = "Thunderstorms",
+        [forecast.WEATHER_STATES.SNOW] = "Snow"
     }
     
-    local current = stateDescriptions[currentState] or "Unknown conditions"
+    local current = stateDesc[currentState] or "Unknown"
     local future = "Conditions expected to continue"
     
-    -- Check next few hours for changes
     if hourlyForecasts and hourlyForecasts[1] then
         local nextHour = hourlyForecasts[1]
         if nextHour.rainChance > 50 and currentState == forecast.WEATHER_STATES.CLEAR then
-            future = string.format("Rain likely (%d%% chance)", nextHour.rainChance)
-        elseif nextHour.rainChance < 30 and (currentState == forecast.WEATHER_STATES.RAIN or currentState == forecast.WEATHER_STATES.THUNDER) then
+            future = string.format("Rain likely (%d%%)", nextHour.rainChance)
+        elseif nextHour.rainChance < 30 and currentState ~= forecast.WEATHER_STATES.CLEAR then
             future = "Clearing expected"
-        elseif nextHour.thunderChance > 30 then
-            future = string.format("Thunderstorms possible (%d%%)", nextHour.thunderChance)
         end
     end
     
     return current .. ". " .. future .. "."
 end
 
--- Generate a complete forecast (updated for v2.0)
-function forecast.generate(historyData, latestData)
-    local currentState = getCurrentState(latestData)
-    local gameTime = os.time() * 1000  -- Convert to ticks approximation
-    local gameDay = os.day()
+-- Biome to Celsius conversion
+function forecast.biomeTocelsius(biome, mcTemp)
+    if biomeTemperatures[biome] then return biomeTemperatures[biome] end
+    if mcTemp and mcTemp > 0.01 then return math.floor((mcTemp * 40) - 10) end
+    return math.random(0, 20)
+end
+
+-- Apply time variation
+function forecast.applyTimeVariation(baseTemp, gameTime)
+    local normalized = (gameTime or 6000) / 24000
+    local variation = math.cos((normalized - 0.25) * 2 * math.pi) * 8
+    return math.floor(baseTemp + variation)
+end
+
+-- Apply weather effects
+function forecast.applyWeatherEffects(temp, isRaining, rainLevel)
+    if isRaining then return math.floor(temp - (3 + (rainLevel or 0.5) * 5)) end
+    return math.floor(temp)
+end
+
+-- Get temperature in Celsius for current conditions
+function forecast.getTemperatureCelsius(weatherData)
+    if not weatherData then return 15 end
     
-    -- Sync global state from station data
+    local stationData = {
+        biome = weatherData.biome,
+        altitude = weatherData.altitude or 64,
+        id = weatherData.stationId
+    }
+    
+    local gameDay = os.day()
+    local gameHour = math.floor((os.time() * 1000) / forecast.TICKS_PER_HOUR) % 24
+    
+    return forecast.calculateStationTemperature(stationData, gameDay, gameHour, weatherData.isRaining, weatherData.rainLevel, nil)
+end
+
+-- Get biome humidity
+function forecast.getBiomeHumidity(biome)
+    return biomeHumidity[biome] or math.random(40, 60)
+end
+
+-- Apply weather to humidity
+function forecast.applyWeatherToHumidity(baseHumidity, isRaining, rainLevel, isThundering)
+    local humidity = baseHumidity
+    if isRaining then humidity = humidity + 20 + (rainLevel or 0.5) * 30 end
+    if isThundering then humidity = humidity + 15 end
+    return math.min(100, math.floor(humidity))
+end
+
+-- Get humidity percentage
+function forecast.getHumidityPercent(weatherData)
+    if not weatherData then return 50 end
+    
+    if weatherData.humidity and weatherData.humidity > 0.01 then
+        local humidity = weatherData.humidity <= 1 and weatherData.humidity * 100 or weatherData.humidity
+        return forecast.applyWeatherToHumidity(humidity, weatherData.isRaining, weatherData.rainLevel, weatherData.isThundering)
+    end
+    
+    local baseHumidity = forecast.getBiomeHumidity(weatherData.biome)
+    return forecast.applyWeatherToHumidity(baseHumidity, weatherData.isRaining, weatherData.rainLevel, weatherData.isThundering)
+end
+
+-- Generate complete forecast with per-station data
+function forecast.generate(historyData, latestData, allStationsData)
+    local currentState = getCurrentState(latestData)
+    local gameTime = os.time() * 1000
+    local gameDay = os.day()
+    local currentHour = math.floor(gameTime / forecast.TICKS_PER_HOUR) % 24
+    
     if latestData and latestData.data then
         forecast.syncFromStationData(latestData.data)
     end
     
-    -- Generate hourly forecasts
     local hourlyForecasts = forecast.generateHourlyForecasts(gameTime, gameDay)
     
-    -- Calculate current temperature for prediction base
+    -- Per-station forecasts
+    local stationForecasts = {}
+    if allStationsData then
+        for stationId, stationWeather in pairs(allStationsData) do
+            local stationData = {
+                id = stationId,
+                biome = stationWeather.data and stationWeather.data.biome or "minecraft:plains",
+                altitude = stationWeather.data and stationWeather.data.altitude or 64
+            }
+            forecast.registerStation(stationId, stationData)
+            stationForecasts[stationId] = {
+                hourly = forecast.generate24HourForecast(stationData, gameDay, currentHour),
+                fiveDay = forecast.generate5DayForecast(stationData, gameDay)
+            }
+        end
+    end
+    
     local currentTemp = 15
     if latestData and latestData.data then
         currentTemp = forecast.getTemperatureCelsius(latestData.data)
     end
     
-    -- Convert to legacy prediction format for display compatibility
-    local predictions = convertToLegacyPredictions(hourlyForecasts, currentTemp, gameTime)
-    
-    -- Get current rain chance from hourly forecast
     local currentRainChance = hourlyForecasts[0] and hourlyForecasts[0].rainChance or 15
     local currentThunderChance = hourlyForecasts[0] and hourlyForecasts[0].thunderChance or 0
     
-    local result = {
+    return {
         version = version,
         generatedAt = os.epoch("utc"),
         gameTime = os.time(),
         gameDay = gameDay,
+        season = forecast.getSeasonName(gameDay),
         current = {
             state = currentState,
             data = latestData and latestData.data or nil,
             rainChance = currentRainChance,
-            thunderChance = currentThunderChance
+            thunderChance = currentThunderChance,
+            temperature = currentTemp
         },
         globalWeather = {
             isRaining = globalWeatherState.isRaining,
             isThundering = globalWeatherState.isThundering,
-            currentRainChance = globalWeatherState.currentRainChance
+            currentRainChance = globalWeatherState.currentRainChance,
+            plannedDuration = globalWeatherState.plannedDuration
         },
-        predictions = predictions,
-        summary = forecast.generateSummary(currentState, predictions, hourlyForecasts)
+        hourlyForecasts = hourlyForecasts,
+        stationForecasts = stationForecasts,
+        summary = forecast.generateSummary(currentState, nil, hourlyForecasts)
     }
-    
-    return result
 end
 
 -- Get weather icon for state
@@ -472,311 +694,22 @@ function forecast.getIcon(state)
         [forecast.WEATHER_STATES.CLOUDY] = "cloud",
         [forecast.WEATHER_STATES.RAIN] = "rain",
         [forecast.WEATHER_STATES.STORM] = "storm",
-        [forecast.WEATHER_STATES.THUNDER] = "lightning"
+        [forecast.WEATHER_STATES.THUNDER] = "lightning",
+        [forecast.WEATHER_STATES.SNOW] = "snow"
     }
     return icons[state] or "unknown"
 end
 
 -- Get temperature description
 function forecast.getTemperatureDesc(temp)
-    if temp < 0 then return "Freezing"
+    if temp < -10 then return "Freezing"
+    elseif temp < 0 then return "Very Cold"
     elseif temp < 5 then return "Cold"
     elseif temp < 15 then return "Cool"
     elseif temp < 22 then return "Mild"
     elseif temp < 30 then return "Warm"
-    else return "Hot"
-    end
-end
-
--- Biome base temperatures in Celsius (realistic approximations)
-local biomeTemperatures = {
-    -- Cold/Frozen biomes
-    ["minecraft:frozen_ocean"] = -15,
-    ["minecraft:deep_frozen_ocean"] = -18,
-    ["minecraft:frozen_river"] = -10,
-    ["minecraft:snowy_plains"] = -8,
-    ["minecraft:snowy_taiga"] = -12,
-    ["minecraft:snowy_beach"] = -5,
-    ["minecraft:snowy_slopes"] = -15,
-    ["minecraft:frozen_peaks"] = -20,
-    ["minecraft:jagged_peaks"] = -18,
-    ["minecraft:ice_spikes"] = -20,
-    ["minecraft:grove"] = -10,
-    
-    -- Cold biomes
-    ["minecraft:cold_ocean"] = 2,
-    ["minecraft:deep_cold_ocean"] = 0,
-    ["minecraft:old_growth_pine_taiga"] = 5,
-    ["minecraft:old_growth_spruce_taiga"] = 4,
-    ["minecraft:taiga"] = 8,
-    ["minecraft:windswept_hills"] = 6,
-    ["minecraft:windswept_gravelly_hills"] = 5,
-    ["minecraft:windswept_forest"] = 7,
-    ["minecraft:stony_shore"] = 10,
-    
-    -- Temperate biomes
-    ["minecraft:ocean"] = 15,
-    ["minecraft:deep_ocean"] = 12,
-    ["minecraft:lukewarm_ocean"] = 20,
-    ["minecraft:deep_lukewarm_ocean"] = 18,
-    ["minecraft:river"] = 16,
-    ["minecraft:beach"] = 22,
-    ["minecraft:plains"] = 18,
-    ["minecraft:sunflower_plains"] = 20,
-    ["minecraft:meadow"] = 16,
-    ["minecraft:forest"] = 17,
-    ["minecraft:flower_forest"] = 18,
-    ["minecraft:birch_forest"] = 17,
-    ["minecraft:old_growth_birch_forest"] = 16,
-    ["minecraft:dark_forest"] = 14,
-    ["minecraft:swamp"] = 22,
-    ["minecraft:mangrove_swamp"] = 28,
-    ["minecraft:mushroom_fields"] = 18,
-    ["minecraft:cherry_grove"] = 15,
-    ["minecraft:stony_peaks"] = 8,
-    
-    -- Warm biomes
-    ["minecraft:warm_ocean"] = 26,
-    ["minecraft:jungle"] = 32,
-    ["minecraft:sparse_jungle"] = 30,
-    ["minecraft:bamboo_jungle"] = 33,
-    ["minecraft:savanna"] = 35,
-    ["minecraft:savanna_plateau"] = 32,
-    ["minecraft:windswept_savanna"] = 30,
-    
-    -- Hot/Dry biomes
-    ["minecraft:desert"] = 42,
-    ["minecraft:badlands"] = 45,
-    ["minecraft:wooded_badlands"] = 40,
-    ["minecraft:eroded_badlands"] = 48,
-    
-    -- Nether biomes
-    ["minecraft:nether_wastes"] = 85,
-    ["minecraft:soul_sand_valley"] = 60,
-    ["minecraft:crimson_forest"] = 75,
-    ["minecraft:warped_forest"] = 70,
-    ["minecraft:basalt_deltas"] = 95,
-    
-    -- End biomes
-    ["minecraft:the_end"] = -40,
-    ["minecraft:end_highlands"] = -45,
-    ["minecraft:end_midlands"] = -42,
-    ["minecraft:small_end_islands"] = -50,
-    ["minecraft:end_barrens"] = -55,
-    
-    -- Underground
-    ["minecraft:dripstone_caves"] = 12,
-    ["minecraft:lush_caves"] = 18,
-    ["minecraft:deep_dark"] = 8
-}
-
--- Convert Minecraft biome temperature to Celsius
--- Minecraft temps: ~0.0 = frozen, 0.5 = temperate, 1.0 = warm, 2.0 = hot
-function forecast.biomeTocelsius(biome, mcTemp)
-    -- First check if we have a specific biome mapping
-    local biomeKey = biome or "unknown"
-    if biomeTemperatures[biomeKey] then
-        return biomeTemperatures[biomeKey]
-    end
-    
-    -- Fallback: convert MC temp scale to Celsius
-    -- MC temp 0.0 -> -15C, 0.5 -> 15C, 1.0 -> 30C, 2.0 -> 50C
-    if mcTemp and mcTemp > 0.01 then
-        return math.floor((mcTemp * 40) - 10)
-    end
-    
-    -- If still unknown, return random temperature between 0 and 20
-    return math.random(0, 20)
-end
-
--- Apply time-of-day temperature variation
-function forecast.applyTimeVariation(baseTemp, gameTime)
-    -- gameTime: 0-23999, where 6000 = noon, 18000 = midnight
-    local time = gameTime or 6000
-    local normalized = time / 24000
-    
-    -- Temperature peaks at noon (0.25), lowest at midnight (0.75)
-    -- Using cosine curve: coldest at night, warmest at midday
-    local variation = math.cos((normalized - 0.25) * 2 * math.pi) * 8
-    
-    return math.floor(baseTemp + variation)
-end
-
--- Apply weather effects to temperature
-function forecast.applyWeatherEffects(temp, isRaining, rainLevel)
-    local adjusted = temp
-    if isRaining then
-        -- Rain cools things down by 3-8 degrees depending on intensity
-        adjusted = adjusted - (3 + (rainLevel or 0.5) * 5)
-    end
-    return math.floor(adjusted)
-end
-
--- Get full temperature in Celsius with all factors
-function forecast.getTemperatureCelsius(weatherData)
-    if not weatherData then return 15 end
-    
-    local baseTemp = forecast.biomeTocelsius(weatherData.biome, weatherData.temperature)
-    local withTime = forecast.applyTimeVariation(baseTemp, weatherData.time)
-    local final = forecast.applyWeatherEffects(withTime, weatherData.isRaining, weatherData.rainLevel)
-    
-    return final
-end
-
--- Biome base humidity values (0-100%)
-local biomeHumidity = {
-    -- Dry biomes
-    ["minecraft:desert"] = 10,
-    ["minecraft:badlands"] = 15,
-    ["minecraft:wooded_badlands"] = 20,
-    ["minecraft:eroded_badlands"] = 12,
-    ["minecraft:savanna"] = 25,
-    ["minecraft:savanna_plateau"] = 22,
-    ["minecraft:windswept_savanna"] = 28,
-    
-    -- Cold/Frozen (low humidity due to cold air)
-    ["minecraft:frozen_ocean"] = 35,
-    ["minecraft:deep_frozen_ocean"] = 30,
-    ["minecraft:frozen_river"] = 40,
-    ["minecraft:snowy_plains"] = 45,
-    ["minecraft:snowy_taiga"] = 50,
-    ["minecraft:snowy_beach"] = 55,
-    ["minecraft:snowy_slopes"] = 40,
-    ["minecraft:frozen_peaks"] = 35,
-    ["minecraft:jagged_peaks"] = 38,
-    ["minecraft:ice_spikes"] = 30,
-    ["minecraft:grove"] = 55,
-    
-    -- Temperate forests
-    ["minecraft:forest"] = 60,
-    ["minecraft:flower_forest"] = 62,
-    ["minecraft:birch_forest"] = 58,
-    ["minecraft:old_growth_birch_forest"] = 60,
-    ["minecraft:dark_forest"] = 70,
-    ["minecraft:taiga"] = 55,
-    ["minecraft:old_growth_pine_taiga"] = 58,
-    ["minecraft:old_growth_spruce_taiga"] = 60,
-    
-    -- Plains and meadows
-    ["minecraft:plains"] = 50,
-    ["minecraft:sunflower_plains"] = 48,
-    ["minecraft:meadow"] = 55,
-    ["minecraft:cherry_grove"] = 52,
-    
-    -- Wet biomes
-    ["minecraft:swamp"] = 85,
-    ["minecraft:mangrove_swamp"] = 92,
-    ["minecraft:jungle"] = 88,
-    ["minecraft:sparse_jungle"] = 80,
-    ["minecraft:bamboo_jungle"] = 90,
-    
-    -- Ocean biomes
-    ["minecraft:ocean"] = 75,
-    ["minecraft:deep_ocean"] = 72,
-    ["minecraft:warm_ocean"] = 80,
-    ["minecraft:lukewarm_ocean"] = 78,
-    ["minecraft:deep_lukewarm_ocean"] = 76,
-    ["minecraft:cold_ocean"] = 65,
-    ["minecraft:deep_cold_ocean"] = 62,
-    
-    -- Rivers and beaches
-    ["minecraft:river"] = 70,
-    ["minecraft:beach"] = 72,
-    ["minecraft:stony_shore"] = 68,
-    
-    -- Mountains
-    ["minecraft:windswept_hills"] = 45,
-    ["minecraft:windswept_gravelly_hills"] = 42,
-    ["minecraft:windswept_forest"] = 50,
-    ["minecraft:stony_peaks"] = 35,
-    
-    -- Special
-    ["minecraft:mushroom_fields"] = 75,
-    ["minecraft:dripstone_caves"] = 80,
-    ["minecraft:lush_caves"] = 90,
-    ["minecraft:deep_dark"] = 65,
-    
-    -- Nether (very low, it's hot)
-    ["minecraft:nether_wastes"] = 5,
-    ["minecraft:soul_sand_valley"] = 8,
-    ["minecraft:crimson_forest"] = 15,
-    ["minecraft:warped_forest"] = 20,
-    ["minecraft:basalt_deltas"] = 3,
-    
-    -- End (vacuum-like)
-    ["minecraft:the_end"] = 0,
-    ["minecraft:end_highlands"] = 0,
-    ["minecraft:end_midlands"] = 0,
-    ["minecraft:small_end_islands"] = 0,
-    ["minecraft:end_barrens"] = 0
-}
-
--- Get base humidity for a biome
-function forecast.getBiomeHumidity(biome)
-    local biomeKey = biome or "unknown"
-    if biomeHumidity[biomeKey] then
-        return biomeHumidity[biomeKey]
-    end
-    -- Default moderate humidity
-    return math.random(40, 60)
-end
-
--- Apply weather effects to humidity
-function forecast.applyWeatherToHumidity(baseHumidity, isRaining, rainLevel, isThundering)
-    local humidity = baseHumidity
-    
-    if isRaining == true then
-        -- Rain increases humidity significantly
-        local rainBoost = 20 + (rainLevel or 0.5) * 30
-        humidity = humidity + rainBoost
-    end
-    
-    if isThundering == true then
-        -- Thunderstorms are very humid
-        humidity = humidity + 15
-    end
-    
-    -- Cap at 100%
-    if humidity > 100 then humidity = 100 end
-    
-    return math.floor(humidity)
-end
-
--- Apply time of day to humidity (higher at night/morning)
-function forecast.applyTimeToHumidity(baseHumidity, gameTime)
-    local time = gameTime or 6000
-    local normalized = time / 24000
-    
-    -- Humidity peaks at dawn (0) and is lowest at midday (0.25)
-    -- Using cosine: highest around 0/24000 (6AM), lowest around 6000 (noon)
-    local variation = math.cos(normalized * 2 * math.pi) * 10
-    
-    return math.floor(baseHumidity + variation)
-end
-
--- Get full humidity percentage with all factors
-function forecast.getHumidityPercent(weatherData)
-    if not weatherData then return 50 end
-    
-    -- Check if we have a valid humidity from the detector
-    local detectedHumidity = weatherData.humidity
-    if detectedHumidity and detectedHumidity > 0.01 then
-        -- Use detected humidity (convert from 0-1 to 0-100 if needed)
-        local humidity = detectedHumidity
-        if humidity <= 1 then
-            humidity = humidity * 100
-        end
-        -- Still apply weather effects
-        humidity = forecast.applyWeatherToHumidity(humidity, weatherData.isRaining, weatherData.rainLevel, weatherData.isThundering)
-        return math.floor(humidity)
-    end
-    
-    -- Generate humidity based on biome
-    local baseHumidity = forecast.getBiomeHumidity(weatherData.biome)
-    local withTime = forecast.applyTimeToHumidity(baseHumidity, weatherData.time)
-    local final = forecast.applyWeatherToHumidity(withTime, weatherData.isRaining, weatherData.rainLevel, weatherData.isThundering)
-    
-    return final
+    elseif temp < 38 then return "Hot"
+    else return "Extreme Heat" end
 end
 
 return forecast
