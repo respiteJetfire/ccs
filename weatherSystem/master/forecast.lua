@@ -1,6 +1,6 @@
 -- weatherSystem/master/forecast.lua
 -- Weather Forecast Logic with Hourly Predictions and Weather Control
-local version = "2.0.0"
+local version = "2.1.0"
 
 local forecast = {}
 

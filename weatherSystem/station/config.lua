@@ -1,6 +1,6 @@
 -- weatherSystem/station/config.lua
 -- Configuration for Weather Station
-local version = "1.0.0"
+local version = "1.1.0"
 
 local config = {
     -- Station identification
