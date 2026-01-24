@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_assets.lua
--- UI Assets v6.1.1 - Icons, Colors, and Weather Symbols
-local version = "6.1.1"
+-- UI Assets v6.1.2 - Icons, Colors, and Weather Symbols
+local version = "6.1.2"
 
 local assets = {}
 
@@ -43,13 +43,17 @@ assets.colors = {
 -- Weather symbols (single character for compact display)
 assets.symbols = {
     clear = "*",      -- Sun/star
-    cloudy = "~",     -- Cloud
+    cloudy = "#",     -- Cloud block
     rain = "/",       -- Rain drops
-    storm = "#",      -- Heavy rain
+    storm = "!",      -- Storm
     thunder = "!",    -- Lightning
-    snow = "o",       -- Snowflake
+    snow = "*",       -- Snowflake
     fog = "=",        -- Fog lines
-    partlycloudy = ".",
+    partlycloudy = "~",
+    lightrain = "/",
+    heavyrain = "!",
+    lightsnow = "*",
+    blizzard = "!",
     unknown = "?"
 }
 
@@ -330,19 +334,19 @@ local snowNoteToRain = {
     ["Snowy"] = "Rainy",
     ["snowing"] = "raining",
     ["Snowing"] = "Raining",
-    ["flurries"] = "drizzle",
-    ["Flurries"] = "Drizzle",
-    ["blizzard"] = "storm",
-    ["Blizzard"] = "Storm",
+    ["flurries"] = "showers",
+    ["Flurries"] = "Showers",
+    ["blizzard"] = "thunderstorm",
+    ["Blizzard"] = "Thunderstorm",
     ["whiteout"] = "downpour",
     ["Whiteout"] = "Downpour",
     ["Winter weather"] = "Wet weather",
-    ["Heavy snow"] = "Heavy rain",
+    ["Heavy snow"] = "Thunderstorm",
     ["Light snow"] = "Light rain",
     ["Snow showers"] = "Rain showers",
     ["Chance of snow"] = "Chance of rain",
-    ["Heavy snow expected"] = "Heavy rain expected",
-    ["Blizzard conditions"] = "Storm conditions"
+    ["Heavy snow expected"] = "Thunderstorms expected",
+    ["Blizzard conditions"] = "Thunderstorm conditions"
 }
 
 local rainNoteToSnow = {

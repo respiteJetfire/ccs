@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.1.1 - Biome detector, forecast display with station cycling
+-- Weather Station v6.1.2 - Biome detector, forecast display with station cycling
 -- Master handles all forecasting - station registers and displays
-local version = "6.1.1"
+local version = "6.1.2"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
