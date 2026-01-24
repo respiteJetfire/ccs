@@ -1,20 +1,21 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.2.0 - Weather display with animated symbols and station cycling
-local version = "6.2.0"
+-- UI Renderer v6.2.1 - Weather display with animated symbols and station cycling
+local version = "6.2.1"
 
 local renderer = {}
 
--- Get assets module
-local assets = dofile("weatherSystem/station/ui_assets.lua")
+-- Assets module - must be set via init()
+local assets = nil
 
 -- Monitor reference
 local monitor = nil
 local monitorWidth = 51
 local monitorHeight = 19
 
--- Initialize renderer
-function renderer.init(mon)
+-- Initialize renderer with assets reference
+function renderer.init(mon, assetsModule)
     monitor = mon or term
+    assets = assetsModule
     if monitor.getSize then
         monitorWidth, monitorHeight = monitor.getSize()
     end

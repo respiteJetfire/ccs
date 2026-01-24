@@ -1,5 +1,5 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.2.0 - Biome detector, forecast display with animated weather
+-- Weather Station v6.2.1 - Biome detector, forecast display with animated weather
 -- Master handles all forecasting - station registers and displays
 local version = "6.2.0"
 
@@ -48,7 +48,7 @@ if monitor then
     print("[INFO] Monitor found - weather display enabled")
     assets = dofile("weatherSystem/station/ui_assets.lua")
     renderer = dofile("weatherSystem/station/ui_renderer.lua")
-    renderer.init(monitor)
+    renderer.init(monitor, assets)  -- Pass assets so animations work
 else
     print("[INFO] No monitor - headless mode")
 end
