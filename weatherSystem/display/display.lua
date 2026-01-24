@@ -4,10 +4,10 @@ local version = "1.0.0"
 
 print("[INFO] Weather Display v" .. version .. " starting...")
 
--- Load modules
-local network = require("weatherSystem.display.api_network")
-local renderer = require("weatherSystem.display.ui_renderer")
-local assets = require("weatherSystem.display.ui_assets")
+-- Load modules (using dofile for reliability)
+local network = dofile("weatherSystem/display/api_network.lua")
+local renderer = dofile("weatherSystem/display/ui_renderer.lua")
+local assets = dofile("weatherSystem/display/ui_assets.lua")
 
 -- Configuration
 local CONFIG = {

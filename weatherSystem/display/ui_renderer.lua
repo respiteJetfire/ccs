@@ -5,7 +5,7 @@ local version = "1.0.0"
 local renderer = {}
 
 -- Get assets module
-local assets = require("weatherSystem.display.ui_assets")
+local assets = dofile("weatherSystem/display/ui_assets.lua")
 
 -- Monitor reference
 local monitor = nil

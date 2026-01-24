@@ -4,9 +4,9 @@ local version = "1.0.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
--- Load modules
-local config = require("weatherSystem.station.config")
-local weatherpacket = require("weatherSystem.station.api_weatherpacket")
+-- Load modules (relative paths from station directory)
+local config = dofile("weatherSystem/station/config.lua")
+local weatherpacket = dofile("weatherSystem/station/api_weatherpacket.lua")
 
 -- Load custom config
 config.load()
