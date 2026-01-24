@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.0 - Responsive weather display with animated symbols
-local version = "6.3.0"
+-- UI Renderer v6.3.1 - Fixed station display and UI improvements
+local version = "6.3.1"
 
 local renderer = {}
 
@@ -247,9 +247,13 @@ function renderer.draw24HourPage(forecast)
                 local x = 2 + col * colWidth
                 local rowY = y + row * 6
                 
-                -- Hour
+                -- Day/Night indicator next to hour
+                local dnStr = hourForecast.isDay and "D" or "N"
+                local dnColor = hourForecast.isDay and assets.colors.clear or assets.colors.textSecondary
+                
+                -- Hour with D/N
                 local hourStr = string.format("%02d:00", hourForecast.hour)
-                renderer.drawText(x, rowY, hourStr, assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(x, rowY, dnStr .. " " .. hourStr, dnColor, assets.colors.background)
                 
                 -- Weather symbol with color - convert based on biome (animated)
                 local state = assets.convertWeatherForBiome(hourForecast.predictedState or "clear", biome)
@@ -269,12 +273,6 @@ function renderer.draw24HourPage(forecast)
                     local rainColor = hourForecast.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
                     renderer.drawText(x, rowY + 3, rainStr, rainColor, assets.colors.background)
                 end
-                
-                -- Day/Night indicator
-                local dnStr = hourForecast.isDay and "D" or "N"
-                renderer.drawText(x + colWidth - 2, rowY, dnStr, 
-                    hourForecast.isDay and assets.colors.clear or assets.colors.textSecondary, 
-                    assets.colors.background)
             end
         end
     end

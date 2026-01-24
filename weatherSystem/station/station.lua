@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.3.0 - Responsive display with big screen support
+-- Weather Station v6.3.1 - Fixed station assignment for main/other pages
 -- Master handles all forecasting - station registers and displays
-local version = "6.3.0"
+local version = "6.3.1"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -83,8 +83,7 @@ local localBiomeData = {
 local currentPage = "current"
 local pageList = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
 local currentPageIndex = 1
-local displayStationIndex = 1
-local otherStationIndex = 0  -- For displaying other stations (0 = none selected yet)
+local otherStationIndex = 0  -- Index for cycling through other stations
 local cachedOtherStation = nil  -- Cached other station for "other" pages
 local cachedOtherForecast = nil
 
@@ -187,28 +186,30 @@ local function processForecast(data)
     return false
 end
 
--- Get current display station
-local function getCurrentDisplayStation()
-    if #allStations == 0 then
-        return {
-            id = config.STATION_ID,
-            name = config.STATION_NAME,
-            biome = localBiomeData.biome
-        }
-    end
-    
-    local idx = ((displayStationIndex - 1) % #allStations) + 1
-    return allStations[idx]
-end
-
--- Cycle to next station
-local function cycleStation()
-    if #allStations > 1 then
-        displayStationIndex = displayStationIndex + 1
-        if displayStationIndex > #allStations then
-            displayStationIndex = 1
+-- Get this station's info (always returns local station)
+local function getLocalStation()
+    -- Try to find this station in allStations list
+    for i, station in ipairs(allStations) do
+        if tostring(station.id) == tostring(config.STATION_ID) then
+            return station, i
         end
     end
+    -- Fallback to local data
+    return {
+        id = config.STATION_ID,
+        name = config.STATION_NAME,
+        biome = localBiomeData.biome
+    }, 1
+end
+
+-- Get index of local station in allStations (for overview highlighting)
+local function getLocalStationIndex()
+    for i, station in ipairs(allStations) do
+        if tostring(station.id) == tostring(config.STATION_ID) then
+            return i
+        end
+    end
+    return 1
 end
 
 -- Select next other station (cycles through stations not this one) and cache it
@@ -297,14 +298,15 @@ local function displayLoop()
     
     while true do
         if currentForecast then
-            local station = getCurrentDisplayStation()
-            local stationName = station and station.name or config.STATION_NAME
-            local stationId = station and tostring(station.id) or tostring(config.STATION_ID)
+            -- Always use local station for main pages
+            local station, localIdx = getLocalStation()
+            local stationName = station.name or config.STATION_NAME
+            local stationId = tostring(station.id) or tostring(config.STATION_ID)
             
             local stationForecast = currentForecast.stationForecasts and 
                                     currentForecast.stationForecasts[stationId]
             
-            -- Build display data
+            -- Build display data for local station
             local displayForecast = {
                 generatedAt = currentForecast.generatedAt,
                 gameTime = currentForecast.gameTime,
@@ -317,13 +319,13 @@ local function displayLoop()
                 hourly = stationForecast and stationForecast.hourly or currentForecast.hourly or {},
                 fiveDay = stationForecast and stationForecast.fiveDay or currentForecast.fiveDay or {},
                 stationName = stationName,
-                stationBiome = station and station.biome or localBiomeData.biome,
+                stationBiome = station.biome or localBiomeData.biome,
                 allStations = allStations,
                 stationForecasts = currentForecast.stationForecasts or {}
             }
             
-            -- Render page (use cached other station for "other" pages)
-            renderer.renderPage(displayForecast, allStations, currentPage, displayStationIndex, cachedOtherStation, cachedOtherForecast)
+            -- Render page (local station for main pages, cached other station for "other" pages)
+            renderer.renderPage(displayForecast, allStations, currentPage, localIdx, cachedOtherStation, cachedOtherForecast)
             
             -- Advance animation frame
             assets.nextFrame()
@@ -393,16 +395,13 @@ local function inputLoop()
                 if currentPageIndex < 1 then currentPageIndex = #activePages end
                 currentPage = activePages[currentPageIndex]
             end
-        elseif key == keys.s then
-            cycleStation()
-            print("[INFO] Switched to station " .. displayStationIndex)
         end
     end
 end
 
 -- Main
 print("[INFO] Weather Station running...")
-print("[INFO] Keys: Q=quit, R=refresh, N/P=page, S=station")
+print("[INFO] Keys: Q=quit, R=refresh, N/P=page")
 
 registerStation()
 
