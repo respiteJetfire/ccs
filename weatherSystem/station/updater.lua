@@ -1,6 +1,6 @@
 -- updater.lua
 -- Computer Craft Script Updater for Weather Station
-local version = "1.0.0"
+local version = "1.0.1"
 print("[INFO] Weather Station Updater v" .. version .. " starting...")
 
 local repo = "https://github.com/respiteJetfire/ccs/blob/main/"
@@ -32,7 +32,8 @@ local function updateScripts()
         {remote = "weatherSystem/station/updater.lua", local_ = "updater.lua"},
         {remote = "weatherSystem/station/station.lua", local_ = "weatherSystem/station/station.lua"},
         {remote = "weatherSystem/station/config.lua", local_ = "weatherSystem/station/config.lua"},
-        {remote = "weatherSystem/station/api_weatherpacket.lua", local_ = "weatherSystem/station/api_weatherpacket.lua"},
+        {remote = "weatherSystem/station/ui_assets.lua", local_ = "weatherSystem/station/ui_assets.lua"},
+        {remote = "weatherSystem/station/ui_renderer.lua", local_ = "weatherSystem/station/ui_renderer.lua"},
     }
 
     local success = 0

@@ -1,6 +1,6 @@
 -- updater.lua
 -- Computer Craft Script Updater for Weather Master
-local version = "1.0.0"
+local version = "1.0.1"
 print("[INFO] Weather Master Updater v" .. version .. " starting...")
 
 local repo = "https://github.com/respiteJetfire/ccs/blob/main/"
@@ -32,7 +32,6 @@ local function updateScripts()
         {remote = "weatherSystem/master/updater.lua", local_ = "updater.lua"},
         {remote = "weatherSystem/master/master.lua", local_ = "weatherSystem/master/master.lua"},
         {remote = "weatherSystem/master/forecast.lua", local_ = "weatherSystem/master/forecast.lua"},
-        {remote = "weatherSystem/master/db.lua", local_ = "weatherSystem/master/db.lua"},
         {remote = "weatherSystem/master/api_network.lua", local_ = "weatherSystem/master/api_network.lua"},
     }
 
