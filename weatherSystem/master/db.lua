@@ -1,6 +1,6 @@
 -- weatherSystem/master/db.lua
 -- Persistent storage for Weather Master
-local version = "2.0.1"
+local version = "2.1.0"
 
 local db = {}
 
@@ -14,6 +14,20 @@ local FORECAST_FILE = DB_PATH .. "forecasts.json"
 local stations = {}
 local weatherHistory = {}
 local forecasts = {}
+
+-- Deep copy to avoid serialization issues with repeated table references
+local function deepCopy(orig)
+    if type(orig) ~= "table" then return orig end
+    local copy = {}
+    for k, v in pairs(orig) do
+        if type(v) == "table" then
+            copy[k] = deepCopy(v)
+        else
+            copy[k] = v
+        end
+    end
+    return copy
+end
 
 -- Ensure data directory exists
 local function ensureDirectory()
@@ -179,8 +193,10 @@ end
 
 -- Forecast management
 function db.saveForecast(forecastData)
-    forecastData.generatedAt = os.epoch("utc")
-    table.insert(forecasts, forecastData)
+    -- Deep copy to avoid serialization issues
+    local forecastCopy = deepCopy(forecastData)
+    forecastCopy.generatedAt = os.epoch("utc")
+    table.insert(forecasts, forecastCopy)
     
     -- Keep only last 100 forecasts
     while #forecasts > 100 do

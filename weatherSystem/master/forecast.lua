@@ -1,7 +1,7 @@
 -- weatherSystem/master/forecast.lua
 -- Weather Forecast Logic with Per-Station Temperature Forecasting
 -- Includes 24-hour and 5-day forecasts with weather control enforcement
-local version = "3.1.0"
+local version = "3.2.0"
 
 local forecast = {}
 
@@ -72,6 +72,32 @@ local function getForecastSeed(gameDay, hour, stationId)
         baseSeed = baseSeed + stationHash
     end
     return baseSeed
+end
+
+-- Deep copy a table to avoid shared references (fixes serialization errors)
+local function deepCopy(orig)
+    if type(orig) ~= "table" then return orig end
+    local copy = {}
+    for k, v in pairs(orig) do
+        if type(v) == "table" then
+            copy[k] = deepCopy(v)
+        else
+            copy[k] = v
+        end
+    end
+    return copy
+end
+
+-- Convert 0-indexed table to 1-indexed array for JSON serialization
+local function toSerializableArray(tbl, maxIndex)
+    if not tbl then return {} end
+    local arr = {}
+    for i = 0, (maxIndex or 23) do
+        if tbl[i] then
+            arr[i + 1] = deepCopy(tbl[i])
+        end
+    end
+    return arr
 end
 
 -- Station registry for distance calculations
@@ -341,7 +367,8 @@ function forecast.generate24HourForecast(stationData, gameDay, currentHour)
         if i > 12 then confidence = forecast.CONFIDENCE.LOW
         elseif i > 6 then confidence = forecast.CONFIDENCE.MEDIUM end
         
-        forecasts[i] = {
+        -- Use 1-based indexing for JSON serialization
+        forecasts[i + 1] = {
             hour = forecastHour,
             hoursFromNow = i,
             day = forecastDay,
@@ -360,8 +387,8 @@ function forecast.generate24HourForecast(stationData, gameDay, currentHour)
         stationTemps[stationId] = temp
     end
     
-    -- Cache this forecast
-    cachedStationForecasts[cacheKey] = forecasts
+    -- Cache this forecast (store a deep copy)
+    cachedStationForecasts[cacheKey] = deepCopy(forecasts)
     
     return forecasts
 end
@@ -419,7 +446,8 @@ function forecast.generate5DayForecast(stationData, gameDay)
         -- Day names: Today, Tomorrow, Day 3, Day 4, Day 5
         local dayName = day == 0 and "Today" or (day == 1 and "Tomorrow" or ("Day " .. tostring(day + 1)))
         
-        forecasts[day] = {
+        -- Use 1-based indexing for JSON serialization
+        forecasts[day + 1] = {
             day = forecastDay,
             daysFromNow = day,
             dayName = dayName,
@@ -432,8 +460,8 @@ function forecast.generate5DayForecast(stationData, gameDay)
         }
     end
     
-    -- Cache the forecast
-    cachedStationForecasts[cacheKey] = forecasts
+    -- Cache the forecast (store a deep copy)
+    cachedStationForecasts[cacheKey] = deepCopy(forecasts)
     
     return forecasts
 end
@@ -472,10 +500,10 @@ function forecast.checkAndApplyWeather(currentTick, gameDay)
     
     globalWeatherState.nextWeatherCheck = currentTick + forecast.TICKS_PER_HOUR
     
-    local hourForecast = globalWeatherState.hourlyForecasts[0]
+    local hourForecast = globalWeatherState.hourlyForecasts[1] or globalWeatherState.hourlyForecasts[0]
     if not hourForecast then
         forecast.generateHourlyForecasts(currentTick, gameDay)
-        hourForecast = globalWeatherState.hourlyForecasts[0]
+        hourForecast = globalWeatherState.hourlyForecasts[1] or globalWeatherState.hourlyForecasts[0]
     end
     
     if not hourForecast then return nil end
@@ -490,7 +518,7 @@ function forecast.checkAndApplyWeather(currentTick, gameDay)
     
     -- Calculate duration from consecutive hours with same weather
     local durationHours = 1
-    for i = 1, 12 do
+    for i = 2, 13 do
         local futureHour = globalWeatherState.hourlyForecasts[i]
         if futureHour and futureHour.willRain == shouldRain then
             durationHours = durationHours + 1
@@ -589,7 +617,8 @@ function forecast.generateHourlyForecasts(currentGameTime, gameDay)
         if i > 12 then confidence = forecast.CONFIDENCE.LOW
         elseif i > 6 then confidence = forecast.CONFIDENCE.MEDIUM end
         
-        forecasts[i] = {
+        -- Use 1-based indexing for JSON serialization
+        forecasts[i + 1] = {
             hour = forecastHour,
             hoursFromNow = i,
             day = forecastDay,
@@ -605,8 +634,8 @@ function forecast.generateHourlyForecasts(currentGameTime, gameDay)
         wasRaining = willRain
     end
     
-    -- Cache the forecasts
-    cachedHourlyForecasts[cacheKey] = forecasts
+    -- Cache the forecasts (store a deep copy)
+    cachedHourlyForecasts[cacheKey] = deepCopy(forecasts)
     globalWeatherState.hourlyForecasts = forecasts
     return forecasts
 end
@@ -660,8 +689,9 @@ function forecast.generateSummary(currentState, predictions, hourlyForecasts)
     local current = stateDesc[currentState] or "Unknown"
     local future = "Conditions expected to continue"
     
-    if hourlyForecasts and hourlyForecasts[1] then
-        local nextHour = hourlyForecasts[1]
+    -- hourlyForecasts[1] is current hour, [2] is next hour
+    if hourlyForecasts and hourlyForecasts[2] then
+        local nextHour = hourlyForecasts[2]
         if nextHour.rainChance > 50 and currentState == forecast.WEATHER_STATES.CLEAR then
             future = string.format("Rain likely (%d%%)", nextHour.rainChance)
         elseif nextHour.rainChance < 30 and currentState ~= forecast.WEATHER_STATES.CLEAR then
@@ -775,9 +805,10 @@ function forecast.generate(historyData, latestData, allStationsData)
         currentTemp = forecast.getTemperatureCelsius(latestData.data)
     end
     
-    local currentRainChance = hourlyForecasts[0] and hourlyForecasts[0].rainChance or 15
-    local currentThunderChance = hourlyForecasts[0] and hourlyForecasts[0].thunderChance or 0
+    local currentRainChance = hourlyForecasts[1] and hourlyForecasts[1].rainChance or 15
+    local currentThunderChance = hourlyForecasts[1] and hourlyForecasts[1].thunderChance or 0
     
+    -- Deep copy all forecast data to avoid serialization issues with repeated table references
     return {
         version = version,
         generatedAt = os.epoch("utc"),
@@ -786,7 +817,7 @@ function forecast.generate(historyData, latestData, allStationsData)
         season = forecast.getSeasonName(gameDay),
         current = {
             state = currentState,
-            data = latestData and latestData.data or nil,
+            data = latestData and deepCopy(latestData.data) or nil,
             rainChance = currentRainChance,
             thunderChance = currentThunderChance,
             temperature = currentTemp
@@ -797,9 +828,9 @@ function forecast.generate(historyData, latestData, allStationsData)
             currentRainChance = globalWeatherState.currentRainChance,
             plannedDuration = globalWeatherState.plannedDuration
         },
-        hourlyForecasts = hourlyForecasts,
-        fiveDayForecasts = globalFiveDay,
-        stationForecasts = stationForecasts,
+        hourlyForecasts = deepCopy(hourlyForecasts),
+        fiveDayForecasts = deepCopy(globalFiveDay),
+        stationForecasts = deepCopy(stationForecasts),
         summary = forecast.generateSummary(currentState, nil, hourlyForecasts)
     }
 end

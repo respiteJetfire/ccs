@@ -1,6 +1,6 @@
 -- weatherSystem/master/api_network.lua
 -- Network wrapper for Weather Master
-local version = "1.0.0"
+local version = "1.1.0"
 
 local network = {}
 
@@ -11,6 +11,20 @@ network.DISPLAY_PROTOCOL = "weather_display"
 
 -- Modem reference
 local modemSide = nil
+
+-- Deep copy for safe serialization
+local function deepCopy(orig)
+    if type(orig) ~= "table" then return orig end
+    local copy = {}
+    for k, v in pairs(orig) do
+        if type(v) == "table" then
+            copy[k] = deepCopy(v)
+        else
+            copy[k] = v
+        end
+    end
+    return copy
+end
 
 -- Initialize network
 function network.init()
@@ -40,7 +54,8 @@ end
 function network.send(targetId, message, protocol)
     protocol = protocol or network.MASTER_PROTOCOL
     if type(message) == "table" then
-        message = textutils.serialiseJSON(message)
+        -- Deep copy to avoid serialization issues with repeated references
+        message = textutils.serialiseJSON(deepCopy(message))
     end
     return rednet.send(targetId, message, protocol)
 end
@@ -49,7 +64,8 @@ end
 function network.broadcast(message, protocol)
     protocol = protocol or network.MASTER_PROTOCOL
     if type(message) == "table" then
-        message = textutils.serialiseJSON(message)
+        -- Deep copy to avoid serialization issues with repeated references
+        message = textutils.serialiseJSON(deepCopy(message))
     end
     rednet.broadcast(message, protocol)
 end

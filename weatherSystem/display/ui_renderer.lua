@@ -1,6 +1,6 @@
 -- weatherSystem/display/ui_renderer.lua
 -- UI Renderer for Weather Display with 24-hour and 5-day forecasts
-local version = "3.1.0"
+local version = "3.2.0"
 
 local renderer = {}
 
@@ -248,7 +248,7 @@ function renderer.draw24HourPage(forecast, stationId)
     
     for row = 0, 1 do
         for col = 0, 5 do
-            local hourIndex = row * 6 + col
+            local hourIndex = row * 6 + col + 1  -- 1-based indexing
             local hourForecast = hourlyData[hourIndex]
             
             if hourForecast then
@@ -307,13 +307,13 @@ function renderer.draw5DayPage(forecast, stationId)
     local y = 7
     local colWidth = math.floor(monitorWidth / 5)
     
-    for i = 0, 4 do
+    for i = 1, 5 do  -- 1-based indexing
         local dayForecast = fiveDayData[i]
         if dayForecast then
-            local x = 2 + i * colWidth
+            local x = 2 + (i - 1) * colWidth
             
             -- Day name
-            local dayName = dayForecast.dayName or ("Day " .. (i + 1))
+            local dayName = dayForecast.dayName or ("Day " .. i)
             if #dayName > colWidth - 1 then
                 dayName = dayName:sub(1, colWidth - 1)
             end
@@ -452,7 +452,7 @@ function renderer.renderPage(forecast, stations, page, stationIndex, stationWeat
     
     -- Footer with station count
     local stationCount = stations and #stations or 0
-    renderer.drawFooter("Day " .. tostring(os.day()) .. " | " .. stationCount .. " Station(s) | v3.0")
+    renderer.drawFooter("Day " .. tostring(os.day()) .. " | " .. stationCount .. " Station(s) | v3.2")
 end
 
 -- Full screen render (legacy)
