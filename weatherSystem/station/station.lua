@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
 -- Weather Station - Biome detector, position reporter, and forecast display
 -- Master handles all forecasting - station just registers and displays
-local version = "5.0.0"
+local version = "5.0.1"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -47,8 +47,8 @@ local renderer = nil
 local assets = nil
 if monitor then
     print("[INFO] Monitor found - weather display enabled")
-    renderer = dofile("weatherSystem/station/ui_renderer.lua")
     assets = dofile("weatherSystem/station/ui_assets.lua")
+    renderer = dofile("weatherSystem/station/ui_renderer.lua")
     renderer.init(monitor)
 else
     print("[INFO] No monitor found - headless station mode")
