@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.1.0 - Weather display with symbols, colors, station cycling
-local version = "6.1.0"
+-- UI Renderer v6.1.1 - Weather display with symbols, colors, station cycling
+local version = "6.1.1"
 
 local renderer = {}
 
@@ -174,9 +174,10 @@ function renderer.drawCurrentPage(forecast)
         renderer.drawText(2, monitorHeight - 3, "Season: " .. forecast.season, assets.colors.textHighlight, assets.colors.background)
     end
     
-    -- Summary
+    -- Summary - convert based on biome
     if forecast.summary then
-        renderer.drawCenteredText(monitorHeight - 2, forecast.summary, assets.colors.textPrimary, assets.colors.background)
+        local summary = assets.convertNoteForBiome(forecast.summary, biome)
+        renderer.drawCenteredText(monitorHeight - 2, summary, assets.colors.textPrimary, assets.colors.background)
     end
 end
 
@@ -321,10 +322,10 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
     
     -- Column headers
     renderer.drawText(2, 4, "Station", assets.colors.textSecondary, assets.colors.background)
-    renderer.drawText(24, 4, "Wx", assets.colors.textSecondary, assets.colors.background)
-    renderer.drawText(28, 4, "Temp", assets.colors.textSecondary, assets.colors.background)
-    renderer.drawText(35, 4, "Rain", assets.colors.textSecondary, assets.colors.background)
-    renderer.drawText(42, 4, "Biome", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(22, 4, "Wx", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(26, 4, "Temp", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(33, 4, "Rain", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(40, 4, "Biome", assets.colors.textSecondary, assets.colors.background)
     renderer.drawLine(5, "-", assets.colors.textSecondary, assets.colors.background)
     
     if not stations or #stations == 0 then
@@ -344,26 +345,34 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
             
             -- Station name
             local name = station.name or ("Station " .. tostring(station.id))
-            if #name > 18 then name = name:sub(1, 16) .. ".." end
+            if #name > 17 then name = name:sub(1, 15) .. ".." end
             renderer.drawText(2, y, prefix .. name, nameColor, assets.colors.background)
             
-            -- Get station forecast if available
-            local stationId = tostring(station.id)
+            -- Get station forecast if available - try both string and number keys
+            local stationId = station.id
             local stationBiome = station.biome
-            local stationForecast = forecast.stationForecasts and forecast.stationForecasts[stationId]
+            local stationForecast = nil
             
+            if forecast.stationForecasts then
+                stationForecast = forecast.stationForecasts[tostring(stationId)] or 
+                                  forecast.stationForecasts[stationId]
+            end
+            
+            local current = nil
             if stationForecast and stationForecast.hourly and stationForecast.hourly[1] then
-                local current = stationForecast.hourly[1]
-                
+                current = stationForecast.hourly[1]
+            end
+            
+            if current then
                 -- Weather symbol - convert based on station's biome
                 local state = assets.convertWeatherForBiome(current.predictedState or "clear", stationBiome)
                 local symbol = assets.getWeatherSymbol(state)
                 local color = assets.getWeatherColor(state)
-                renderer.drawText(24, y, symbol .. symbol, color, assets.colors.background)
+                renderer.drawText(22, y, symbol .. symbol, color, assets.colors.background)
                 
                 -- Temperature
                 if current.temperature then
-                    renderer.drawText(28, y, tostring(math.floor(current.temperature)) .. "C", 
+                    renderer.drawText(26, y, tostring(math.floor(current.temperature)) .. "C", 
                         assets.getTemperatureColor(current.temperature), assets.colors.background)
                 end
                 
@@ -371,20 +380,20 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
                 if current.rainChance then
                     local rainStr = tostring(current.rainChance) .. "%"
                     local rainColor = current.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                    renderer.drawText(35, y, rainStr, rainColor, assets.colors.background)
+                    renderer.drawText(33, y, rainStr, rainColor, assets.colors.background)
                 end
             else
-                -- No forecast data
-                renderer.drawText(24, y, "--", assets.colors.textSecondary, assets.colors.background)
-                renderer.drawText(28, y, "--", assets.colors.textSecondary, assets.colors.background)
-                renderer.drawText(35, y, "--", assets.colors.textSecondary, assets.colors.background)
+                -- No forecast data - show placeholder
+                renderer.drawText(22, y, "??", assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(26, y, "??C", assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(33, y, "??%", assets.colors.textSecondary, assets.colors.background)
             end
             
             -- Biome (truncated)
             if station.biome then
                 local biomeStr = station.biome:gsub("minecraft:", ""):gsub("_", " ")
                 if #biomeStr > 12 then biomeStr = biomeStr:sub(1, 10) .. ".." end
-                renderer.drawText(42, y, biomeStr, assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(40, y, biomeStr, assets.colors.textSecondary, assets.colors.background)
             end
             
             y = y + 1
