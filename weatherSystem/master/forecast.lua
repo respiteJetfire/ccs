@@ -432,8 +432,11 @@ function forecast.generate(historyData, latestData)
             rainChance = currentRainChance,
             thunderChance = currentThunderChance
         },
-        globalWeather = forecast.getGlobalWeatherState(),
-        hourlyForecasts = hourlyForecasts,
+        globalWeather = {
+            isRaining = globalWeatherState.isRaining,
+            isThundering = globalWeatherState.isThundering,
+            currentRainChance = globalWeatherState.currentRainChance
+        },
         predictions = predictions,
         summary = forecast.generateSummary(currentState, predictions, hourlyForecasts)
     }

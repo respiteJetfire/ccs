@@ -6,6 +6,7 @@ local config = {
     -- Station identification
     STATION_ID = os.getComputerID(),
     STATION_NAME = "Weather Station " .. tostring(os.getComputerID()),
+    CUSTOM_NAME = nil,  -- Set to a string to use custom name instead of default
     
     -- Network settings
     PROTOCOL = "weather_net",
@@ -45,6 +46,12 @@ function config.load()
             end
         end
     end
+    
+    -- Apply custom name if set
+    if config.CUSTOM_NAME and config.CUSTOM_NAME ~= "" then
+        config.STATION_NAME = config.CUSTOM_NAME
+        print("[CONFIG] Using custom name: " .. config.STATION_NAME)
+    end
 end
 
 -- Function to save current config
@@ -54,6 +61,7 @@ function config.save()
         local saveData = {
             STATION_ID = config.STATION_ID,
             STATION_NAME = config.STATION_NAME,
+            CUSTOM_NAME = config.CUSTOM_NAME,
             CHANNEL = config.CHANNEL,
             COLLECT_INTERVAL = config.COLLECT_INTERVAL,
             SEND_INTERVAL = config.SEND_INTERVAL,
