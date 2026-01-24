@@ -1,5 +1,5 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.0.0 - Weather display with symbols, colors, station cycling
+-- UI Renderer v6.1.0 - Weather display with symbols, colors, station cycling
 local version = "6.1.0"
 
 local renderer = {}
@@ -136,8 +136,8 @@ function renderer.drawCurrentPage(forecast)
     local state = assets.convertWeatherForBiome(current.state or "clear", biome)
     local weatherColor = assets.getWeatherColor(state)
     
-    -- Draw large icon
-    renderer.drawLargeIcon(2, 4, state, weatherColor)
+    -- Draw large icon (y=5 to avoid header overlap)
+    renderer.drawLargeIcon(2, 5, state, weatherColor)
     
     -- Current conditions
     local startX = 18
@@ -156,16 +156,17 @@ function renderer.drawCurrentPage(forecast)
         (current.rainChance or 0) > 50 and assets.colors.rain or assets.colors.textSecondary, 
         assets.colors.background)
     
-    -- Weather note
+    -- Weather note - convert based on biome
     if current.weatherNote then
-        renderer.drawText(startX, 9, current.weatherNote, assets.colors.textSecondary, assets.colors.background)
+        local note = assets.convertNoteForBiome(current.weatherNote, biome)
+        renderer.drawText(startX, 9, note, assets.colors.textSecondary, assets.colors.background)
     end
     
     -- Biome
     if forecast.stationBiome then
-        local biome = forecast.stationBiome:gsub("minecraft:", ""):gsub("_", " ")
-        if #biome > 20 then biome = biome:sub(1, 18) .. ".." end
-        renderer.drawText(startX, 11, "Biome: " .. biome, assets.colors.textSecondary, assets.colors.background)
+        local biomeDisplay = forecast.stationBiome:gsub("minecraft:", ""):gsub("_", " ")
+        if #biomeDisplay > 20 then biomeDisplay = biomeDisplay:sub(1, 18) .. ".." end
+        renderer.drawText(startX, 11, "Biome: " .. biomeDisplay, assets.colors.textSecondary, assets.colors.background)
     end
     
     -- Season
@@ -293,9 +294,9 @@ function renderer.draw5DayPage(forecast)
                 renderer.drawText(x, y + 6, rainStr, rainColor, assets.colors.background)
             end
             
-            -- Weather note (truncated)
+            -- Weather note (truncated) - convert based on biome
             if dayForecast.weatherNote then
-                local note = dayForecast.weatherNote
+                local note = assets.convertNoteForBiome(dayForecast.weatherNote, biome)
                 if #note > colWidth - 1 then
                     note = note:sub(1, colWidth - 2)
                 end
@@ -314,29 +315,36 @@ function renderer.draw5DayPage(forecast)
     end
 end
 
--- Draw stations overview page
+-- Draw stations overview page (shows weather at each station)
 function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
-    renderer.drawText(2, 3, "Station Overview", assets.colors.textHighlight, assets.colors.background)
-    renderer.drawLine(4, "-", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(2, 3, "All Stations", assets.colors.textHighlight, assets.colors.background)
+    
+    -- Column headers
+    renderer.drawText(2, 4, "Station", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(24, 4, "Wx", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(28, 4, "Temp", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(35, 4, "Rain", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawText(42, 4, "Biome", assets.colors.textSecondary, assets.colors.background)
+    renderer.drawLine(5, "-", assets.colors.textSecondary, assets.colors.background)
     
     if not stations or #stations == 0 then
         renderer.drawCenteredText(8, "No stations registered", assets.colors.textWarning)
         return
     end
     
-    local y = 5
-    local maxStations = math.min(#stations, monitorHeight - 7)
+    local y = 6
+    local maxStations = math.min(#stations, monitorHeight - 8)
     
     for i = 1, maxStations do
         local station = stations[i]
         if station then
             local isCurrentStation = (i == currentStationIndex)
-            local prefix = isCurrentStation and "> " or "  "
+            local prefix = isCurrentStation and ">" or " "
             local nameColor = isCurrentStation and assets.colors.textHighlight or assets.colors.textPrimary
             
             -- Station name
             local name = station.name or ("Station " .. tostring(station.id))
-            if #name > 20 then name = name:sub(1, 18) .. ".." end
+            if #name > 18 then name = name:sub(1, 16) .. ".." end
             renderer.drawText(2, y, prefix .. name, nameColor, assets.colors.background)
             
             -- Get station forecast if available
@@ -351,11 +359,11 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
                 local state = assets.convertWeatherForBiome(current.predictedState or "clear", stationBiome)
                 local symbol = assets.getWeatherSymbol(state)
                 local color = assets.getWeatherColor(state)
-                renderer.drawText(26, y, symbol, color, assets.colors.background)
+                renderer.drawText(24, y, symbol .. symbol, color, assets.colors.background)
                 
                 -- Temperature
                 if current.temperature then
-                    renderer.drawText(30, y, tostring(math.floor(current.temperature)) .. "C", 
+                    renderer.drawText(28, y, tostring(math.floor(current.temperature)) .. "C", 
                         assets.getTemperatureColor(current.temperature), assets.colors.background)
                 end
                 
@@ -363,34 +371,173 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
                 if current.rainChance then
                     local rainStr = tostring(current.rainChance) .. "%"
                     local rainColor = current.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                    renderer.drawText(38, y, rainStr, rainColor, assets.colors.background)
+                    renderer.drawText(35, y, rainStr, rainColor, assets.colors.background)
                 end
+            else
+                -- No forecast data
+                renderer.drawText(24, y, "--", assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(28, y, "--", assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(35, y, "--", assets.colors.textSecondary, assets.colors.background)
             end
             
             -- Biome (truncated)
             if station.biome then
-                local biome = station.biome:gsub("minecraft:", ""):gsub("_", " ")
-                if #biome > 15 then biome = biome:sub(1, 13) .. ".." end
-                renderer.drawText(46, y, biome, assets.colors.textSecondary, assets.colors.background)
+                local biomeStr = station.biome:gsub("minecraft:", ""):gsub("_", " ")
+                if #biomeStr > 12 then biomeStr = biomeStr:sub(1, 10) .. ".." end
+                renderer.drawText(42, y, biomeStr, assets.colors.textSecondary, assets.colors.background)
             end
             
             y = y + 1
         end
     end
     
-    -- Instructions
-    renderer.drawText(2, monitorHeight - 2, "Press S to cycle stations", assets.colors.textSecondary, assets.colors.background)
+    -- Show count
+    renderer.drawText(2, monitorHeight - 2, tostring(#stations) .. " station(s) online", assets.colors.textSecondary, assets.colors.background)
+end
+
+-- Draw another station's current conditions (for cycling)
+function renderer.drawOtherStationCurrent(forecast, station, stationForecast)
+    if not station or not stationForecast then
+        renderer.drawCenteredText(10, "No station data", assets.colors.textWarning)
+        return
+    end
+    
+    local biome = station.biome
+    local hourly = stationForecast.hourly
+    local current = hourly and hourly[1]
+    
+    if not current then
+        renderer.drawCenteredText(10, "No current data", assets.colors.textWarning)
+        return
+    end
+    
+    -- Convert weather state based on biome
+    local state = assets.convertWeatherForBiome(current.predictedState or "clear", biome)
+    local weatherColor = assets.getWeatherColor(state)
+    
+    -- Draw large icon (y=5 to avoid header overlap)
+    renderer.drawLargeIcon(2, 5, state, weatherColor)
+    
+    -- Current conditions
+    local startX = 18
+    renderer.drawText(startX, 4, "Current @ " .. (station.name or "Station"), assets.colors.textHighlight, assets.colors.background)
+    renderer.drawLine(5, "-", assets.colors.textSecondary, assets.colors.background)
+    
+    -- Weather state
+    local stateStr = (state:sub(1,1):upper() .. state:sub(2)):gsub("partlycloudy", "Partly Cloudy")
+    renderer.drawText(startX, 6, "Weather: " .. stateStr, weatherColor, assets.colors.background)
+    
+    -- Temperature
+    renderer.drawTemperature(startX, 7, current.temperature or 15, "Temp")
+    
+    -- Rain chance
+    renderer.drawText(startX, 8, "Rain: " .. tostring(current.rainChance or 0) .. "%", 
+        (current.rainChance or 0) > 50 and assets.colors.rain or assets.colors.textSecondary, 
+        assets.colors.background)
+    
+    -- Weather note - convert based on biome
+    if current.weatherNote then
+        local note = assets.convertNoteForBiome(current.weatherNote, biome)
+        renderer.drawText(startX, 9, note, assets.colors.textSecondary, assets.colors.background)
+    end
+    
+    -- Biome
+    if biome then
+        local biomeDisplay = biome:gsub("minecraft:", ""):gsub("_", " ")
+        if #biomeDisplay > 20 then biomeDisplay = biomeDisplay:sub(1, 18) .. ".." end
+        renderer.drawText(startX, 11, "Biome: " .. biomeDisplay, assets.colors.textSecondary, assets.colors.background)
+    end
+end
+
+-- Draw another station's 5-day forecast (for cycling)
+function renderer.drawOtherStation5Day(forecast, station, stationForecast)
+    if not station or not stationForecast then
+        renderer.drawCenteredText(10, "No station data", assets.colors.textWarning)
+        return
+    end
+    
+    local biome = station.biome
+    local fiveDayData = stationForecast.fiveDay
+    
+    renderer.drawText(2, 3, "5-Day @ " .. (station.name or "Station"), assets.colors.textHighlight, assets.colors.background)
+    renderer.drawLine(4, "-", assets.colors.textSecondary, assets.colors.background)
+    
+    if not fiveDayData or #fiveDayData == 0 then
+        renderer.drawCenteredText(8, "No 5-day forecast", assets.colors.textWarning)
+        return
+    end
+    
+    local colWidth = math.floor((monitorWidth - 2) / 5)
+    local y = 5
+    
+    for i = 1, 5 do
+        local dayForecast = fiveDayData[i]
+        if dayForecast then
+            local x = 2 + (i - 1) * colWidth
+            
+            -- Day name
+            local dayName = dayForecast.dayName or ("Day " .. i)
+            if #dayName > colWidth - 1 then
+                dayName = dayName:sub(1, colWidth - 2)
+            end
+            renderer.drawText(x, y, dayName, assets.colors.textHighlight, assets.colors.background)
+            
+            -- Weather symbol row - convert based on biome
+            local state = assets.convertWeatherForBiome(dayForecast.predictedState or "clear", biome)
+            local symbol = assets.getWeatherSymbol(state)
+            local color = assets.getWeatherColor(state)
+            renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, assets.colors.background)
+            
+            -- State name
+            local stateStr = state:sub(1, colWidth - 1)
+            renderer.drawText(x, y + 2, stateStr, color, assets.colors.background)
+            
+            -- High temp
+            if dayForecast.highTemp then
+                local highStr = "H:" .. tostring(math.floor(dayForecast.highTemp))
+                renderer.drawText(x, y + 4, highStr, assets.colors.hot, assets.colors.background)
+            end
+            
+            -- Low temp
+            if dayForecast.lowTemp then
+                local lowStr = "L:" .. tostring(math.floor(dayForecast.lowTemp))
+                renderer.drawText(x, y + 5, lowStr, assets.colors.cold, assets.colors.background)
+            end
+            
+            -- Rain chance
+            if dayForecast.rainChance then
+                local rainStr = tostring(dayForecast.rainChance) .. "%"
+                local rainColor = dayForecast.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
+                renderer.drawText(x, y + 6, rainStr, rainColor, assets.colors.background)
+            end
+            
+            -- Weather note - convert based on biome
+            if dayForecast.weatherNote then
+                local note = assets.convertNoteForBiome(dayForecast.weatherNote, biome)
+                if #note > colWidth - 1 then
+                    note = note:sub(1, colWidth - 2)
+                end
+                renderer.drawText(x, y + 8, note, assets.colors.textSecondary, assets.colors.background)
+            end
+        end
+    end
 end
 
 -- Render specific page
-function renderer.renderPage(forecast, stations, page, stationIndex)
+function renderer.renderPage(forecast, stations, page, stationIndex, otherStation, otherStationForecast)
     renderer.clear()
     
+    -- Calculate total pages
+    local hasOtherStations = stations and #stations > 1
+    local totalPages = hasOtherStations and 6 or 4
+    
     local pageNames = {
-        current = "1/4 Now",
-        hourly = "2/4 24hr",
-        fiveday = "3/4 5day",
-        overview = "4/4 All"
+        current = "1/" .. totalPages .. " Now",
+        hourly = "2/" .. totalPages .. " 24hr",
+        fiveday = "3/" .. totalPages .. " 5day",
+        overview = "4/" .. totalPages .. " All",
+        other5day = "5/" .. totalPages .. " Other",
+        othercurrent = "6/" .. totalPages .. " Other"
     }
     
     local stationName = forecast.stationName or "Weather Station"
@@ -399,7 +546,13 @@ function renderer.renderPage(forecast, stations, page, stationIndex)
         stationIndicator = " [" .. tostring(stationIndex) .. "/" .. tostring(#stations) .. "]"
     end
     
-    renderer.drawHeader(stationName .. stationIndicator, os.time(), pageNames[page] or "")
+    -- For "other" pages, show that station's name
+    local headerName = stationName
+    if (page == "other5day" or page == "othercurrent") and otherStation then
+        headerName = otherStation.name or "Other Station"
+    end
+    
+    renderer.drawHeader(headerName .. stationIndicator, os.time(), pageNames[page] or "")
     
     if page == "current" then
         renderer.drawCurrentPage(forecast)
@@ -409,6 +562,10 @@ function renderer.renderPage(forecast, stations, page, stationIndex)
         renderer.draw5DayPage(forecast)
     elseif page == "overview" then
         renderer.drawOverviewPage(forecast, stations, stationIndex)
+    elseif page == "other5day" and otherStation and otherStationForecast then
+        renderer.drawOtherStation5Day(forecast, otherStation, otherStationForecast)
+    elseif page == "othercurrent" and otherStation and otherStationForecast then
+        renderer.drawOtherStationCurrent(forecast, otherStation, otherStationForecast)
     else
         renderer.drawCurrentPage(forecast)
     end

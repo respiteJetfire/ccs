@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.0.0 - Biome detector, forecast display with station cycling
+-- Weather Station v6.1.0 - Biome detector, forecast display with station cycling
 -- Master handles all forecasting - station registers and displays
-local version = "6.0.0"
+local version = "6.1.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -81,9 +81,10 @@ local localBiomeData = {
 
 -- Display state
 local currentPage = "current"
-local pageList = {"current", "hourly", "fiveday", "overview"}
+local pageList = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
 local currentPageIndex = 1
 local displayStationIndex = 1
+local otherStationIndex = 0  -- For displaying other stations (0 = none selected yet)
 
 -- Detect biome data
 local function detectBiomeData()
@@ -208,6 +209,43 @@ local function cycleStation()
     end
 end
 
+-- Get a random other station (not this one)
+local function getRandomOtherStation()
+    if #allStations <= 1 then return nil, nil end
+    
+    -- Find stations that are not this station
+    local otherStations = {}
+    for i, station in ipairs(allStations) do
+        if tostring(station.id) ~= tostring(config.STATION_ID) then
+            table.insert(otherStations, station)
+        end
+    end
+    
+    if #otherStations == 0 then return nil, nil end
+    
+    -- Pick a random one (or cycle through them)
+    otherStationIndex = otherStationIndex + 1
+    if otherStationIndex > #otherStations then
+        otherStationIndex = 1
+    end
+    
+    local station = otherStations[otherStationIndex]
+    local stationId = tostring(station.id)
+    local stationForecast = currentForecast and currentForecast.stationForecasts and 
+                            currentForecast.stationForecasts[stationId]
+    
+    return station, stationForecast
+end
+
+-- Get current page list based on whether we have other stations
+local function getActivePageList()
+    if #allStations > 1 then
+        return {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+    else
+        return {"current", "hourly", "fiveday", "overview"}
+    end
+end
+
 -- Heartbeat loop
 local function heartbeatLoop()
     while true do
@@ -272,11 +310,18 @@ local function displayLoop()
                 fiveDay = stationForecast and stationForecast.fiveDay or currentForecast.fiveDay or {},
                 stationName = stationName,
                 stationBiome = station and station.biome or localBiomeData.biome,
-                allStations = allStations
+                allStations = allStations,
+                stationForecasts = currentForecast.stationForecasts or {}
             }
             
+            -- Get other station for "other" pages
+            local otherStation, otherStationForecast = nil, nil
+            if currentPage == "other5day" or currentPage == "othercurrent" then
+                otherStation, otherStationForecast = getRandomOtherStation()
+            end
+            
             -- Render page
-            renderer.renderPage(displayForecast, allStations, currentPage, displayStationIndex)
+            renderer.renderPage(displayForecast, allStations, currentPage, displayStationIndex, otherStation, otherStationForecast)
         else
             -- Offline screen
             renderer.clear()
@@ -299,18 +344,15 @@ local function cycleLoop()
     
     while true do
         local now = os.epoch("utc")
+        local activePages = getActivePageList()
         
         -- Cycle pages
         if now - lastPageChange > pageTime * 1000 then
             currentPageIndex = currentPageIndex + 1
-            if currentPageIndex > #pageList then
+            if currentPageIndex > #activePages then
                 currentPageIndex = 1
-                -- After showing all pages, switch station
-                if #allStations > 1 then
-                    cycleStation()
-                end
             end
-            currentPage = pageList[currentPageIndex]
+            currentPage = activePages[currentPageIndex]
             lastPageChange = now
         end
         
@@ -330,14 +372,16 @@ local function inputLoop()
             print("[INFO] Forecast requested")
         elseif key == keys.n or key == keys.right then
             if monitor then
-                currentPageIndex = (currentPageIndex % #pageList) + 1
-                currentPage = pageList[currentPageIndex]
+                local activePages = getActivePageList()
+                currentPageIndex = (currentPageIndex % #activePages) + 1
+                currentPage = activePages[currentPageIndex]
             end
         elseif key == keys.p or key == keys.left then
             if monitor then
+                local activePages = getActivePageList()
                 currentPageIndex = currentPageIndex - 1
-                if currentPageIndex < 1 then currentPageIndex = #pageList end
-                currentPage = pageList[currentPageIndex]
+                if currentPageIndex < 1 then currentPageIndex = #activePages end
+                currentPage = activePages[currentPageIndex]
             end
         elseif key == keys.s then
             cycleStation()

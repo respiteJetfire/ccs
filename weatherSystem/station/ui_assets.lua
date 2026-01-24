@@ -1,5 +1,5 @@
 -- weatherSystem/station/ui_assets.lua
--- UI Assets v6.0.0 - Icons, Colors, and Weather Symbols
+-- UI Assets v6.1.0 - Icons, Colors, and Weather Symbols
 local version = "6.1.0"
 
 local assets = {}
@@ -319,6 +319,80 @@ end
 -- Get display-ready weather state (converts based on biome)
 function assets.getDisplayState(state, biome)
     return assets.convertWeatherForBiome(state, biome)
+end
+
+-- Note conversion maps (snow terms to rain terms)
+local snowNoteToRain = {
+    ["snow"] = "rain",
+    ["Snow"] = "Rain",
+    ["SNOW"] = "RAIN",
+    ["snowy"] = "rainy",
+    ["Snowy"] = "Rainy",
+    ["snowing"] = "raining",
+    ["Snowing"] = "Raining",
+    ["flurries"] = "drizzle",
+    ["Flurries"] = "Drizzle",
+    ["blizzard"] = "storm",
+    ["Blizzard"] = "Storm",
+    ["whiteout"] = "downpour",
+    ["Whiteout"] = "Downpour",
+    ["Winter weather"] = "Wet weather",
+    ["Heavy snow"] = "Heavy rain",
+    ["Light snow"] = "Light rain",
+    ["Snow showers"] = "Rain showers",
+    ["Chance of snow"] = "Chance of rain",
+    ["Heavy snow expected"] = "Heavy rain expected",
+    ["Blizzard conditions"] = "Storm conditions"
+}
+
+local rainNoteToSnow = {
+    ["rain"] = "snow",
+    ["Rain"] = "Snow",
+    ["RAIN"] = "SNOW",
+    ["rainy"] = "snowy",
+    ["Rainy"] = "Snowy",
+    ["raining"] = "snowing",
+    ["Raining"] = "Snowing",
+    ["drizzle"] = "flurries",
+    ["Drizzle"] = "Flurries",
+    ["storm"] = "blizzard",
+    ["Storm"] = "Blizzard",
+    ["downpour"] = "whiteout",
+    ["Downpour"] = "Whiteout",
+    ["Wet weather"] = "Winter weather",
+    ["Heavy rain"] = "Heavy snow",
+    ["Light rain"] = "Light rain",
+    ["Rain showers"] = "Snow showers",
+    ["Chance of rain"] = "Chance of snow",
+    ["Heavy rain expected"] = "Heavy snow expected",
+    ["Showers"] = "Flurries",
+    ["Wet conditions"] = "Winter conditions",
+    ["Light showers"] = "Light flurries",
+    ["Soaking rain"] = "Heavy snow",
+    ["Storms"] = "Blizzards",
+    ["Severe weather"] = "Severe winter weather",
+    ["Heavy storms"] = "Heavy blizzards"
+}
+
+-- Convert weather note based on biome
+function assets.convertNoteForBiome(note, biome)
+    if not note then return "" end
+    
+    local isCold = assets.isColdBiome(biome)
+    local conversionMap = isCold and rainNoteToSnow or snowNoteToRain
+    
+    -- Try direct replacement first
+    if conversionMap[note] then
+        return conversionMap[note]
+    end
+    
+    -- Do word-by-word replacement
+    local result = note
+    for original, replacement in pairs(conversionMap) do
+        result = result:gsub(original, replacement)
+    end
+    
+    return result
 end
 
 return assets
