@@ -134,11 +134,24 @@ end
 function sendForecastToStation(computerId, stationId)
     if not currentForecast then return end
     
-    -- Get station-specific forecast
+    -- Get station-specific forecast (use string key for consistent lookup)
+    local strId = tostring(stationId)
     local stationForecast = currentForecast.stationForecasts and 
-                            currentForecast.stationForecasts[stationId]
+                            currentForecast.stationForecasts[strId]
     
-    -- Build response packet
+    -- Build station list from active stations
+    local stationList = {}
+    for id, station in pairs(stations) do
+        if isStationActive(station) then
+            table.insert(stationList, {
+                id = id,
+                name = station.name,
+                biome = station.biome
+            })
+        end
+    end
+    
+    -- Build response packet with ALL data the station needs
     local response = {
         type = "forecast_response",
         version = version,
@@ -150,9 +163,12 @@ function sendForecastToStation(computerId, stationId)
         globalWeather = currentForecast.globalWeather,
         current = currentForecast.current,
         summary = currentForecast.summary,
-        -- Station-specific forecasts
+        -- Station-specific forecasts for this station
         hourly = stationForecast and stationForecast.hourly or {},
-        fiveDay = stationForecast and stationForecast.fiveDay or {}
+        fiveDay = stationForecast and stationForecast.fiveDay or {},
+        -- Full data for overview/cycling
+        stations = stationList,
+        stationForecasts = currentForecast.stationForecasts or {}
     }
     
     network.send(computerId, response, network.STATION_PROTOCOL)

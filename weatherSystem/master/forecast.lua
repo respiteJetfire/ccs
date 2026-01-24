@@ -628,7 +628,9 @@ function forecast.generate(stationsData)
     local stationList = {}
     
     for stationId, station in pairs(registeredStations) do
-        stationForecasts[stationId] = {
+        -- Use string keys for consistent lookup on station side
+        local strId = tostring(stationId)
+        stationForecasts[strId] = {
             hourly = forecast.generate24Hour(stationId, gameDay, currentHour),
             fiveDay = forecast.generate5Day(stationId, gameDay),
             stationName = station.name,
