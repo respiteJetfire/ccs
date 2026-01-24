@@ -1,10 +1,10 @@
 -- weatherSystem/station/ui_assets.lua
--- UI Assets - Icons and Color Palettes for Weather Station Display
-local version = "4.0.0"
+-- UI Assets v6.0.0 - Icons, Colors, and Weather Symbols
+local version = "6.0.0"
 
 local assets = {}
 
--- Color palette (using CC colors)
+-- Color palette
 assets.colors = {
     -- Background colors
     background = colors.black,
@@ -34,7 +34,23 @@ assets.colors = {
     cool = colors.blue,
     mild = colors.lime,
     warm = colors.orange,
-    hot = colors.red
+    hot = colors.red,
+    
+    -- Extra
+    gray = colors.gray
+}
+
+-- Weather symbols (single character for compact display)
+assets.symbols = {
+    clear = "*",      -- Sun/star
+    cloudy = "~",     -- Cloud
+    rain = "/",       -- Rain drops
+    storm = "#",      -- Heavy rain
+    thunder = "!",    -- Lightning
+    snow = "o",       -- Snowflake
+    fog = "=",        -- Fog lines
+    partlycloudy = ".",
+    unknown = "?"
 }
 
 -- ASCII art icons (3x3)
@@ -44,15 +60,25 @@ assets.icons = {
         "- O -",
         " /|\\ "
     },
+    clear = {
+        " \\|/ ",
+        "- O -",
+        " /|\\ "
+    },
     cloud = {
         "  __ ",
         " (  )",
         "(____)"
     },
+    cloudy = {
+        "  __ ",
+        " (  )",
+        "(____)"
+    },
     rain = {
-        " ___  ",
-        "(___) ",
-        "/ / / "
+        " ___ ",
+        "(___)",
+        "/ / /"
     },
     storm = {
         " ___ ",
@@ -64,10 +90,15 @@ assets.icons = {
         "(__/|",
         "  / "
     },
+    thunder = {
+        " ___ ",
+        "(__/|",
+        "  / "
+    },
     snow = {
         " ___ ",
-        "(___)  ",
-        "* * * "
+        "(___)",
+        "* * *"
     },
     unknown = {
         " ??? ",
@@ -85,12 +116,26 @@ assets.largeIcons = {
         "   /  |  \\   ",
         "  /   |   \\  "
     },
+    clear = {
+        "  \\   |   /  ",
+        "   \\  |  /   ",
+        "--- (   ) ---",
+        "   /  |  \\   ",
+        "  /   |   \\  "
+    },
     cloud = {
         "     ___     ",
         "   _(   )_   ",
         "  (_     _)  ",
         " (__     __) ",
-        "(__________)  "
+        "(__________) "
+    },
+    cloudy = {
+        "     ___     ",
+        "   _(   )_   ",
+        "  (_     _)  ",
+        " (__     __) ",
+        "(__________) "
     },
     rain = {
         "    ____     ",
@@ -113,6 +158,13 @@ assets.largeIcons = {
         "    /|       ",
         "   /         "
     },
+    thunder = {
+        "   _____     ",
+        "  (     )    ",
+        " (__/|___)   ",
+        "    /|       ",
+        "   /         "
+    },
     snow = {
         "   _____     ",
         "  (     )    ",
@@ -122,81 +174,56 @@ assets.largeIcons = {
     }
 }
 
--- Moon phase icons
-assets.moonPhases = {
-    [0] = "@ New Moon",
-    [1] = ") Waxing Crescent",
-    [2] = "D First Quarter",
-    [3] = "D Waxing Gibbous",
-    [4] = "O Full Moon",
-    [5] = "C Waning Gibbous",
-    [6] = "C Last Quarter",
-    [7] = "( Waning Crescent"
-}
-
 -- Weather descriptions
 assets.descriptions = {
-    clear = {
-        "Clear skies ahead",
-        "Beautiful day",
-        "Perfect weather",
-        "Sunny conditions"
-    },
-    cloudy = {
-        "Overcast skies",
-        "Cloud cover building",
-        "Gray skies",
-        "Partly cloudy"
-    },
-    rain = {
-        "Rain in the forecast",
-        "Wet conditions",
-        "Bring an umbrella",
-        "Showers expected"
-    },
-    storm = {
-        "Heavy rain warning",
-        "Storm approaching",
-        "Severe weather",
-        "Stay indoors"
-    },
-    thunder = {
-        "Thunderstorm warning",
-        "Lightning possible",
-        "Severe storms",
-        "Take shelter"
-    },
-    snow = {
-        "Snow expected",
-        "Winter conditions",
-        "Bundle up",
-        "Snowy weather"
-    }
+    clear = {"Clear skies", "Sunny", "Fine weather", "Beautiful day"},
+    cloudy = {"Cloudy", "Overcast", "Gray skies", "Cloud cover"},
+    partlycloudy = {"Partly cloudy", "Some clouds", "Fair weather"},
+    rain = {"Rain", "Showers", "Wet conditions", "Rainy"},
+    lightrain = {"Light rain", "Drizzle", "Light showers"},
+    heavyrain = {"Heavy rain", "Downpour", "Soaking rain"},
+    storm = {"Storms", "Severe weather", "Heavy storms"},
+    thunder = {"Thunderstorms", "Lightning", "Electrical storm"},
+    snow = {"Snow", "Snowing", "Winter weather"},
+    lightsnow = {"Light snow", "Flurries", "Snow showers"},
+    blizzard = {"Blizzard", "Heavy snow", "Whiteout conditions"},
+    fog = {"Foggy", "Misty", "Low visibility"}
 }
 
--- Get random description for weather state
+-- Get description for weather state
 function assets.getDescription(state)
     local descs = assets.descriptions[state]
     if descs then
         return descs[math.random(1, #descs)]
     end
-    return "Weather conditions unknown"
+    return "Weather conditions"
 end
 
 -- Get color for weather state
 function assets.getWeatherColor(state)
     local stateColors = {
         clear = assets.colors.clear,
+        partlycloudy = assets.colors.textPrimary,
         cloudy = assets.colors.cloudy,
+        lightrain = assets.colors.rain,
         rain = assets.colors.rain,
+        heavyrain = assets.colors.storm,
         storm = assets.colors.storm,
         thunder = assets.colors.thunder,
-        snow = assets.colors.snow
+        lightsnow = assets.colors.snow,
+        snow = assets.colors.snow,
+        blizzard = assets.colors.snow,
+        fog = assets.colors.cloudy
     }
     return stateColors[state] or assets.colors.textPrimary
 end
 
--- Get color for temperature (Celsius scale)
+-- Get symbol for weather state
+function assets.getWeatherSymbol(state)
+    return assets.symbols[state] or assets.symbols.unknown
+end
+
+-- Get color for temperature (Celsius)
 function assets.getTemperatureColor(tempC)
     if tempC < -10 then return assets.colors.freezing
     elseif tempC < 0 then return assets.colors.cold
@@ -207,21 +234,14 @@ function assets.getTemperatureColor(tempC)
     end
 end
 
--- Animation frames for rain
-assets.rainFrames = {
-    "  /  /  /  /  ",
-    " /  /  /  /   ",
-    "/  /  /  /  / ",
-    "  /  /  /  /  "
-}
+-- Get icon for state
+function assets.getIcon(state)
+    return assets.icons[state] or assets.icons.unknown
+end
 
--- Animation frames for thunder
-assets.thunderFrames = {
-    "             ",
-    "    /\\       ",
-    "   /  \\      ",
-    "  /    \\     ",
-    "     /\\      "
-}
+-- Get large icon for state
+function assets.getLargeIcon(state)
+    return assets.largeIcons[state] or assets.largeIcons.cloud
+end
 
 return assets

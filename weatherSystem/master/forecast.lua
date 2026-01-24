@@ -1,22 +1,51 @@
 -- weatherSystem/master/forecast.lua
--- Weather Forecast Engine - Master controls all forecasting
--- Global weather, biome-specific display (rain=snow in cold biomes)
-local version = "5.0.0"
+-- Weather Forecast Engine v6.0.0
+-- 120-day deterministic forecast with realistic weather patterns
+-- Storm systems, fronts, and biome-specific conditions
+local version = "6.0.0"
 
 local forecast = {}
+
+-- Load biome config
+local biomeConfig = dofile("weatherSystem/master/biome_config.lua")
 
 -- Minecraft time constants
 forecast.TICKS_PER_HOUR = 1000
 forecast.TICKS_PER_DAY = 24000
+forecast.FORECAST_DAYS = 120
 
 -- Weather states
 forecast.WEATHER_STATES = {
     CLEAR = "clear",
+    PARTLY_CLOUDY = "partlycloudy",
     CLOUDY = "cloudy",
+    OVERCAST = "overcast",
+    LIGHT_RAIN = "lightrain",
     RAIN = "rain",
+    HEAVY_RAIN = "heavyrain",
     STORM = "storm",
     THUNDER = "thunder",
-    SNOW = "snow"
+    LIGHT_SNOW = "lightsnow",
+    SNOW = "snow",
+    BLIZZARD = "blizzard",
+    FOG = "fog"
+}
+
+-- Simplified states for display
+local DISPLAY_STATES = {
+    clear = "clear",
+    partlycloudy = "cloudy",
+    cloudy = "cloudy",
+    overcast = "cloudy",
+    lightrain = "rain",
+    rain = "rain",
+    heavyrain = "storm",
+    storm = "storm",
+    thunder = "thunder",
+    lightsnow = "snow",
+    snow = "snow",
+    blizzard = "snow",
+    fog = "cloudy"
 }
 
 -- Confidence levels
@@ -32,65 +61,36 @@ local globalWeatherState = {
     lastForecastDay = -1
 }
 
--- Cache
-local forecastCache = {}
-local cacheLastHour = -1
-local cacheLastDay = -1
+-- 120-day weather pattern cache (generated once per world seed)
+local weatherPatternCache = {}
+local patternCacheSeed = -1
 
--- Registered stations (from master)
+-- Registered stations
 local registeredStations = {}
 
 -- Season names (30-day seasons, 120-day year)
 local SEASONS = {"Spring", "Summer", "Autumn", "Winter"}
 
--- Biome base temperatures (Celsius)
-local biomeTemperatures = {
-    -- Frozen biomes
-    ["minecraft:frozen_ocean"] = -15, ["minecraft:deep_frozen_ocean"] = -18,
-    ["minecraft:frozen_river"] = -10, ["minecraft:snowy_plains"] = -8,
-    ["minecraft:snowy_taiga"] = -12, ["minecraft:snowy_beach"] = -5,
-    ["minecraft:snowy_slopes"] = -15, ["minecraft:frozen_peaks"] = -20,
-    ["minecraft:jagged_peaks"] = -18, ["minecraft:ice_spikes"] = -20,
-    ["minecraft:grove"] = -10,
-    -- Cold biomes
-    ["minecraft:cold_ocean"] = 2, ["minecraft:deep_cold_ocean"] = 0,
-    ["minecraft:old_growth_pine_taiga"] = 5, ["minecraft:old_growth_spruce_taiga"] = 4,
-    ["minecraft:taiga"] = 8, ["minecraft:windswept_hills"] = 6,
-    ["minecraft:windswept_gravelly_hills"] = 5, ["minecraft:windswept_forest"] = 7,
-    ["minecraft:stony_shore"] = 10, ["minecraft:stony_peaks"] = 8,
-    -- Temperate biomes
-    ["minecraft:ocean"] = 15, ["minecraft:deep_ocean"] = 12,
-    ["minecraft:lukewarm_ocean"] = 20, ["minecraft:deep_lukewarm_ocean"] = 18,
-    ["minecraft:river"] = 16, ["minecraft:beach"] = 22,
-    ["minecraft:plains"] = 18, ["minecraft:sunflower_plains"] = 20,
-    ["minecraft:meadow"] = 16, ["minecraft:forest"] = 17,
-    ["minecraft:flower_forest"] = 18, ["minecraft:birch_forest"] = 17,
-    ["minecraft:old_growth_birch_forest"] = 16, ["minecraft:dark_forest"] = 14,
-    ["minecraft:swamp"] = 22, ["minecraft:mangrove_swamp"] = 28,
-    ["minecraft:mushroom_fields"] = 18, ["minecraft:cherry_grove"] = 15,
-    -- Hot biomes
-    ["minecraft:warm_ocean"] = 26, ["minecraft:jungle"] = 32,
-    ["minecraft:sparse_jungle"] = 30, ["minecraft:bamboo_jungle"] = 33,
-    ["minecraft:savanna"] = 35, ["minecraft:savanna_plateau"] = 32,
-    ["minecraft:windswept_savanna"] = 30, ["minecraft:desert"] = 42,
-    ["minecraft:badlands"] = 45, ["minecraft:wooded_badlands"] = 40,
-    ["minecraft:eroded_badlands"] = 48,
-    -- Nether
-    ["minecraft:nether_wastes"] = 85, ["minecraft:soul_sand_valley"] = 60,
-    ["minecraft:crimson_forest"] = 75, ["minecraft:warped_forest"] = 70,
-    ["minecraft:basalt_deltas"] = 95,
-    -- End
-    ["minecraft:the_end"] = -40, ["minecraft:end_highlands"] = -45,
-    ["minecraft:end_midlands"] = -42, ["minecraft:small_end_islands"] = -50,
-    ["minecraft:end_barrens"] = -55,
-    -- Caves
-    ["minecraft:dripstone_caves"] = 12, ["minecraft:lush_caves"] = 18,
-    ["minecraft:deep_dark"] = 8
+-- Weather notes for conditions
+local WEATHER_NOTES = {
+    clear = {"Clear skies", "Sunny", "Fine weather", "Beautiful day"},
+    partlycloudy = {"Partly cloudy", "Some clouds", "Fair"},
+    cloudy = {"Cloudy", "Overcast", "Gray skies"},
+    overcast = {"Heavy cloud cover", "Dreary"},
+    lightrain = {"Light showers", "Drizzle", "Sprinkles"},
+    rain = {"Rain", "Showers", "Wet"},
+    heavyrain = {"Heavy rain", "Downpour", "Soaking rain"},
+    storm = {"Storms", "Severe weather", "Stay indoors"},
+    thunder = {"Thunderstorms", "Lightning", "Electrical storm"},
+    lightsnow = {"Light snow", "Flurries", "Snow showers"},
+    snow = {"Snow", "Snowing", "Winter weather"},
+    blizzard = {"Blizzard", "Heavy snow", "Whiteout"},
+    fog = {"Foggy", "Misty", "Low visibility"}
 }
 
 -- Deterministic seeded random
 local function seededRandom(seed, min, max)
-    local x = math.sin(seed * 12.9898) * 43758.5453
+    local x = math.sin(seed * 12.9898 + seed * 0.1) * 43758.5453
     local r = x - math.floor(x)
     if min and max then
         return math.floor(r * (max - min + 1)) + min
@@ -100,10 +100,11 @@ end
 
 -- Generate seed for day/hour
 local function getSeed(gameDay, hour, extra)
-    local seed = gameDay * 1000 + hour * 10
+    local seed = gameDay * 1000 + (hour or 0) * 10
     if extra then
-        for i = 1, #tostring(extra) do
-            seed = seed + string.byte(tostring(extra), i)
+        local str = tostring(extra)
+        for i = 1, #str do
+            seed = seed + string.byte(str, i) * (i * 7)
         end
     end
     return seed
@@ -117,15 +118,6 @@ local function deepCopy(orig)
         copy[k] = type(v) == "table" and deepCopy(v) or v
     end
     return copy
-end
-
--- Check if biome is cold (rain shows as snow)
-local function isColdBiome(biome)
-    if not biome then return false end
-    local b = biome:lower()
-    return b:find("frozen") or b:find("snowy") or b:find("ice") or 
-           b:find("grove") or b:find("peaks") or b:find("taiga") or
-           (biomeTemperatures[biome] and biomeTemperatures[biome] < 0)
 end
 
 -- Check if dimension has weather
@@ -143,73 +135,230 @@ function forecast.getSeasonName(gameDay)
     return SEASONS[forecast.getSeason(gameDay) + 1]
 end
 
+-- Get day within season (0-29)
+local function getSeasonDay(gameDay)
+    return gameDay % 30
+end
+
 -- Get seasonal temperature modifier
 local function getSeasonalTempMod(gameDay)
     local s = forecast.getSeason(gameDay)
-    if s == 0 then return 2      -- Spring: slightly warm
-    elseif s == 1 then return 8  -- Summer: hot
-    elseif s == 2 then return -2 -- Autumn: slightly cool
-    else return -12 end          -- Winter: cold
+    local dayInSeason = getSeasonDay(gameDay)
+    
+    -- Gradual transition between seasons
+    local baseTemp = {2, 10, 0, -15}  -- Spring, Summer, Autumn, Winter
+    local nextSeason = (s + 1) % 4
+    local progress = dayInSeason / 30
+    
+    return baseTemp[s + 1] * (1 - progress) + baseTemp[nextSeason + 1] * progress
 end
 
--- Get seasonal rain modifier
-local function getSeasonalRainMod(gameDay)
+-- Get seasonal storm frequency modifier
+local function getSeasonalStormMod(gameDay)
     local s = forecast.getSeason(gameDay)
-    if s == 0 then return 1.4    -- Spring: rainy
-    elseif s == 1 then return 0.9 -- Summer: dry
-    elseif s == 2 then return 1.2 -- Autumn: rainy
-    else return 0.7 end          -- Winter: dry (snow)
+    -- Spring: stormy, Summer: thunderstorms, Autumn: rainy, Winter: snow storms
+    local mods = {1.3, 1.5, 1.2, 0.8}
+    return mods[s + 1]
 end
 
--- Calculate rain chance for an hour
-local function calcRainChance(gameDay, hour, wasRaining)
-    local base = 15
-    local seasonMod = getSeasonalRainMod(gameDay)
-    local persistMod = wasRaining and 2.5 or 1.0
-    local seed = getSeed(gameDay, hour, "rain")
-    local variation = 0.8 + seededRandom(seed) * 0.4
-    return math.max(5, math.min(85, math.floor(base * seasonMod * persistMod * variation)))
+-- Generate 120-day weather pattern for a world
+local function generate120DayPattern(startDay)
+    local worldSeed = startDay - (startDay % 120)  -- Align to 120-day cycle
+    
+    if patternCacheSeed == worldSeed and weatherPatternCache[worldSeed] then
+        return weatherPatternCache[worldSeed]
+    end
+    
+    local pattern = {}
+    local stormActive = false
+    local stormDuration = 0
+    local clearStreak = 0
+    
+    for day = 0, 119 do
+        local actualDay = worldSeed + day
+        pattern[day] = {}
+        
+        local season = math.floor(day / 30)
+        local dayInSeason = day % 30
+        
+        -- Weather systems move through every 3-7 days
+        local systemSeed = getSeed(actualDay, 0, "system")
+        local systemLength = seededRandom(systemSeed, 3, 7)
+        local systemPhase = (day % systemLength) / systemLength
+        
+        -- Determine if a storm front is passing
+        local frontSeed = getSeed(actualDay, 0, "front")
+        local frontChance = 0.15 * getSeasonalStormMod(actualDay)
+        
+        if stormActive then
+            stormDuration = stormDuration - 1
+            if stormDuration <= 0 then
+                stormActive = false
+                clearStreak = seededRandom(frontSeed + 1, 2, 5)  -- Clear period after storm
+            end
+        elseif clearStreak > 0 then
+            clearStreak = clearStreak - 1
+        else
+            if seededRandom(frontSeed, 1, 100) <= frontChance * 100 then
+                stormActive = true
+                stormDuration = seededRandom(frontSeed + 2, 1, 4)
+            end
+        end
+        
+        -- Generate hourly weather for each day
+        for hour = 0, 23 do
+            local hourSeed = getSeed(actualDay, hour, "hourly")
+            
+            -- Base rain chance from season and storm activity
+            local baseRainChance = 15
+            if stormActive then
+                baseRainChance = 70 + seededRandom(hourSeed, 0, 20)
+            elseif systemPhase > 0.3 and systemPhase < 0.7 then
+                -- Mid-system has higher chance
+                baseRainChance = 30 + seededRandom(hourSeed, 0, 20)
+            end
+            
+            -- Time-of-day variation (afternoon storms more common)
+            if hour >= 14 and hour <= 18 and season == 1 then  -- Summer afternoons
+                baseRainChance = baseRainChance + 15
+            end
+            
+            -- Determine weather state
+            local roll = seededRandom(hourSeed + 1, 1, 100)
+            local isRaining = roll <= baseRainChance
+            
+            -- Thunder chance (mainly in summer afternoons)
+            local thunderChance = 0
+            if isRaining and baseRainChance > 40 then
+                thunderChance = (season == 1) and 40 or 15
+                if stormActive then thunderChance = thunderChance + 20 end
+            end
+            local isThundering = isRaining and seededRandom(hourSeed + 2, 1, 100) <= thunderChance
+            
+            -- Intensity
+            local intensity = 1  -- 1=light, 2=normal, 3=heavy
+            if isRaining then
+                local intRoll = seededRandom(hourSeed + 3, 1, 100)
+                if stormActive or intRoll > 80 then
+                    intensity = 3
+                elseif intRoll > 50 then
+                    intensity = 2
+                end
+            end
+            
+            -- Cloud cover
+            local cloudCover = 0
+            if isRaining then
+                cloudCover = 80 + seededRandom(hourSeed + 4, 0, 20)
+            elseif baseRainChance > 30 then
+                cloudCover = 40 + seededRandom(hourSeed + 4, 0, 40)
+            else
+                cloudCover = seededRandom(hourSeed + 4, 0, 40)
+            end
+            
+            pattern[day][hour] = {
+                isRaining = isRaining,
+                isThundering = isThundering,
+                intensity = intensity,
+                cloudCover = cloudCover,
+                rainChance = math.floor(baseRainChance),
+                thunderChance = math.floor(thunderChance),
+                stormSystem = stormActive
+            }
+        end
+    end
+    
+    weatherPatternCache[worldSeed] = pattern
+    patternCacheSeed = worldSeed
+    return pattern
 end
 
--- Calculate thunder chance
-local function calcThunderChance(rainChance, gameDay)
-    if rainChance < 30 then return 0 end
-    local s = forecast.getSeason(gameDay)
-    local base = s == 1 and 35 or 10  -- More thunder in summer
-    return math.floor(base * (rainChance / 50))
+-- Get weather for specific day/hour from pattern
+local function getWeatherFromPattern(gameDay, hour)
+    local pattern = generate120DayPattern(gameDay)
+    local dayIndex = gameDay % 120
+    
+    if pattern[dayIndex] and pattern[dayIndex][hour] then
+        return pattern[dayIndex][hour]
+    end
+    
+    -- Fallback
+    return {
+        isRaining = false,
+        isThundering = false,
+        intensity = 1,
+        cloudCover = 20,
+        rainChance = 15,
+        thunderChance = 0,
+        stormSystem = false
+    }
 end
 
 -- Calculate temperature for station at specific hour
 function forecast.calcTemperature(biome, altitude, gameDay, hour, isRaining)
-    local base = biomeTemperatures[biome] or 15
+    local base = biomeConfig.getTemperature(biome)
     local seasonMod = getSeasonalTempMod(gameDay)
-    local timeMod = math.cos(((hour / 24) - 0.25) * 2 * math.pi) * 8  -- Warmest at 2PM
-    local altMod = -((altitude or 64) - 63) / 100 * 6  -- -0.6C per 100m above sea level
+    
+    -- Time-of-day variation (coldest at 5am, warmest at 2pm)
+    local timeMod = math.cos(((hour / 24) - 0.25) * 2 * math.pi) * 8
+    
+    -- Altitude: -0.6C per 100m above sea level
+    local altMod = -((altitude or 64) - 63) / 100 * 6
+    
+    -- Rain cools things down
     local rainMod = isRaining and -5 or 0
+    
+    -- Daily variation
     local seed = getSeed(gameDay, hour, biome)
     local variation = (seededRandom(seed) - 0.5) * 4
     
     return math.floor(base + seasonMod + timeMod + altMod + rainMod + variation)
 end
 
--- Get weather state for display (converts rain to snow for cold biomes)
-function forecast.getDisplayWeather(isRaining, isThundering, biome, temp)
-    if not isRaining then
-        return forecast.WEATHER_STATES.CLEAR
-    end
-    if isThundering then
-        if isColdBiome(biome) or temp <= 0 then
-            return forecast.WEATHER_STATES.SNOW  -- Snowstorm
+-- Get display weather state (converts to biome-appropriate display)
+function forecast.getDisplayWeather(weather, biome, temp)
+    if not weather.isRaining then
+        if weather.cloudCover > 70 then
+            return "cloudy"
+        elseif weather.cloudCover > 40 then
+            return "partlycloudy"
         end
-        return forecast.WEATHER_STATES.THUNDER
+        return "clear"
     end
-    if isColdBiome(biome) or temp <= 0 then
-        return forecast.WEATHER_STATES.SNOW
+    
+    local isCold = biomeConfig.isCold(biome) or temp <= 0
+    
+    if weather.isThundering then
+        return isCold and "blizzard" or "thunder"
     end
-    return forecast.WEATHER_STATES.RAIN
+    
+    if isCold then
+        if weather.intensity >= 3 then return "blizzard"
+        elseif weather.intensity >= 2 then return "snow"
+        else return "lightsnow" end
+    else
+        if weather.intensity >= 3 then return "heavyrain"
+        elseif weather.intensity >= 2 then return "rain"
+        else return "lightrain" end
+    end
 end
 
--- Register a station (called by master when station registers)
+-- Get simplified state for icons
+function forecast.getSimpleState(state)
+    return DISPLAY_STATES[state] or "clear"
+end
+
+-- Get weather note for state
+function forecast.getWeatherNote(state)
+    local notes = WEATHER_NOTES[state]
+    if notes then
+        local seed = os.epoch("utc") % #notes + 1
+        return notes[seed]
+    end
+    return "Weather conditions"
+end
+
+-- Register a station
 function forecast.registerStation(stationId, stationData)
     registeredStations[tostring(stationId)] = {
         id = stationId,
@@ -219,9 +368,10 @@ function forecast.registerStation(stationId, stationData)
         altitude = stationData.altitude or 64,
         position = stationData.position or {x = 0, y = 64, z = 0}
     }
+    print("[FORECAST] Station registered: " .. tostring(stationId))
 end
 
--- Update station biome data (from heartbeat)
+-- Update station
 function forecast.updateStation(stationId, stationData)
     local key = tostring(stationId)
     if registeredStations[key] then
@@ -232,56 +382,34 @@ function forecast.updateStation(stationId, stationData)
     end
 end
 
--- Get all registered stations
+-- Get all stations
 function forecast.getStations()
     return registeredStations
 end
 
--- Clear cache on hour change
-function forecast.clearCacheIfNeeded(gameDay, hour)
-    if cacheLastDay ~= gameDay or cacheLastHour ~= hour then
-        forecastCache = {}
-        cacheLastDay = gameDay
-        cacheLastHour = hour
-        return true
-    end
-    return false
-end
-
 -- Generate 24-hour forecast for a station
 function forecast.generate24Hour(stationId, gameDay, currentHour)
-    local key = tostring(stationId) .. "_24h_" .. gameDay .. "_" .. currentHour
-    if forecastCache[key] then return forecastCache[key] end
-    
     local station = registeredStations[tostring(stationId)]
     local biome = station and station.biome or "minecraft:plains"
     local altitude = station and station.altitude or 64
     local dimension = station and station.dimension or "minecraft:overworld"
     
     local forecasts = {}
-    local wasRaining = globalWeatherState.isRaining
     
     for i = 0, 23 do
         local hour = (currentHour + i) % 24
         local day = gameDay + math.floor((currentHour + i) / 24)
         
-        local rainChance = calcRainChance(day, hour, wasRaining)
-        local thunderChance = calcThunderChance(rainChance, day)
+        local weather = getWeatherFromPattern(day, hour)
+        local temp = forecast.calcTemperature(biome, altitude, day, hour, weather.isRaining)
+        local state = forecast.getDisplayWeather(weather, biome, temp)
+        local simpleState = forecast.getSimpleState(state)
         
-        -- Deterministic weather decision
-        local seed = getSeed(day, hour, "weather")
-        local willRain = seededRandom(seed + 1, 1, 100) <= rainChance
-        local willThunder = willRain and seededRandom(seed + 2, 1, 100) <= thunderChance
-        
-        local temp = forecast.calcTemperature(biome, altitude, day, hour, willRain)
-        local state = forecast.getDisplayWeather(willRain, willThunder, biome, temp)
-        
-        -- No weather in non-overworld dimensions
+        -- No weather in non-overworld
         if not hasWeather(dimension) then
-            willRain = false
-            willThunder = false
-            state = forecast.WEATHER_STATES.CLEAR
-            rainChance = 0
+            weather = {isRaining = false, isThundering = false, rainChance = 0, thunderChance = 0, cloudCover = 0}
+            state = "clear"
+            simpleState = "clear"
         end
         
         forecasts[i + 1] = {
@@ -289,27 +417,24 @@ function forecast.generate24Hour(stationId, gameDay, currentHour)
             hoursFromNow = i,
             day = day,
             temperature = temp,
-            rainChance = rainChance,
-            thunderChance = thunderChance,
-            willRain = willRain,
-            willThunder = willThunder,
-            predictedState = state,
+            rainChance = weather.rainChance,
+            thunderChance = weather.thunderChance,
+            willRain = weather.isRaining,
+            willThunder = weather.isThundering,
+            predictedState = simpleState,
+            detailedState = state,
+            weatherNote = forecast.getWeatherNote(state),
             isDay = hour >= 6 and hour < 18,
+            cloudCover = weather.cloudCover,
             confidence = i > 12 and forecast.CONFIDENCE.LOW or (i > 6 and forecast.CONFIDENCE.MEDIUM or forecast.CONFIDENCE.HIGH)
         }
-        
-        wasRaining = willRain
     end
     
-    forecastCache[key] = deepCopy(forecasts)
     return forecasts
 end
 
 -- Generate 5-day forecast for a station
 function forecast.generate5Day(stationId, gameDay)
-    local key = tostring(stationId) .. "_5d_" .. gameDay
-    if forecastCache[key] then return forecastCache[key] end
-    
     local station = registeredStations[tostring(stationId)]
     local biome = station and station.biome or "minecraft:plains"
     local altitude = station and station.altitude or 64
@@ -319,57 +444,90 @@ function forecast.generate5Day(stationId, gameDay)
     
     for d = 0, 4 do
         local day = gameDay + d
-        local temps, rainChances = {}, {}
+        local temps = {}
+        local rainHours = 0
+        local thunderHours = 0
+        local totalRainChance = 0
+        local maxIntensity = 1
         
-        -- Sample multiple hours
-        for h = 0, 23, 3 do
-            local seed = getSeed(day, h, "weather")
-            local wasRain = seededRandom(seed, 1, 100) <= calcRainChance(day, h, false)
-            table.insert(temps, forecast.calcTemperature(biome, altitude, day, h, wasRain))
-            table.insert(rainChances, calcRainChance(day, h, false))
+        -- Sample all hours
+        for h = 0, 23 do
+            local weather = getWeatherFromPattern(day, h)
+            local temp = forecast.calcTemperature(biome, altitude, day, h, weather.isRaining)
+            table.insert(temps, temp)
+            
+            if weather.isRaining then rainHours = rainHours + 1 end
+            if weather.isThundering then thunderHours = thunderHours + 1 end
+            totalRainChance = totalRainChance + weather.rainChance
+            if weather.intensity > maxIntensity then maxIntensity = weather.intensity end
         end
         
         local highTemp, lowTemp = -999, 999
-        local avgRain = 0
         for _, t in ipairs(temps) do
             if t > highTemp then highTemp = t end
             if t < lowTemp then lowTemp = t end
         end
-        for _, r in ipairs(rainChances) do avgRain = avgRain + r end
-        avgRain = math.floor(avgRain / #rainChances)
         
-        local state = forecast.WEATHER_STATES.CLEAR
-        if avgRain > 60 then
-            state = isColdBiome(biome) and forecast.WEATHER_STATES.SNOW or forecast.WEATHER_STATES.RAIN
-        elseif avgRain > 40 then
-            state = forecast.WEATHER_STATES.CLOUDY
+        local avgRainChance = math.floor(totalRainChance / 24)
+        local isCold = biomeConfig.isCold(biome) or lowTemp <= 0
+        
+        -- Determine dominant weather state
+        local state = "clear"
+        local note = ""
+        if rainHours >= 12 then
+            if thunderHours >= 4 then
+                state = isCold and "blizzard" or "thunder"
+                note = isCold and "Blizzard conditions" or "Thunderstorms likely"
+            elseif maxIntensity >= 3 then
+                state = isCold and "snow" or "storm"
+                note = isCold and "Heavy snow expected" or "Heavy rain expected"
+            else
+                state = isCold and "snow" or "rain"
+                note = isCold and "Snow showers" or "Rainy day"
+            end
+        elseif rainHours >= 6 then
+            state = isCold and "lightsnow" or "lightrain"
+            note = isCold and "Chance of snow" or "Chance of rain"
+        elseif avgRainChance > 40 then
+            state = "cloudy"
+            note = "Cloudy with possible showers"
+        elseif avgRainChance > 20 then
+            state = "partlycloudy"
+            note = "Partly cloudy"
+        else
+            state = "clear"
+            note = "Clear skies"
         end
         
         if not hasWeather(dimension) then
-            state = forecast.WEATHER_STATES.CLEAR
-            avgRain = 0
+            state = "clear"
+            avgRainChance = 0
+            note = "No weather"
         end
         
-        local dayName = d == 0 and "Today" or (d == 1 and "Tomorrow" or ("Day " .. (d + 1)))
+        local dayNames = {"Today", "Tomorrow", "Day 3", "Day 4", "Day 5"}
         
         forecasts[d + 1] = {
-            dayName = dayName,
+            dayName = dayNames[d + 1],
             day = day,
             highTemp = highTemp,
             lowTemp = lowTemp,
-            rainChance = avgRain,
-            predictedState = state,
+            rainChance = avgRainChance,
+            rainHours = rainHours,
+            thunderHours = thunderHours,
+            predictedState = forecast.getSimpleState(state),
+            detailedState = state,
+            weatherNote = note,
             confidence = d > 3 and forecast.CONFIDENCE.LOW or (d > 1 and forecast.CONFIDENCE.MEDIUM or forecast.CONFIDENCE.HIGH)
         }
     end
     
-    forecastCache[key] = deepCopy(forecasts)
     return forecasts
 end
 
 -- Apply weather using commands API
 function forecast.applyWeather(currentTick, gameDay)
-    local currentHour = math.floor(currentTick / forecast.TICKS_PER_HOUR) % 24
+    local currentHour = math.floor((os.time() * 1000) / forecast.TICKS_PER_HOUR) % 24
     
     -- Only check once per hour
     if globalWeatherState.lastForecastHour == currentHour and 
@@ -379,27 +537,18 @@ function forecast.applyWeather(currentTick, gameDay)
     
     globalWeatherState.lastForecastHour = currentHour
     globalWeatherState.lastForecastDay = gameDay
-    forecast.clearCacheIfNeeded(gameDay, currentHour)
     
-    -- Calculate what weather should be
-    local rainChance = calcRainChance(gameDay, currentHour, globalWeatherState.isRaining)
-    local thunderChance = calcThunderChance(rainChance, gameDay)
-    local seed = getSeed(gameDay, currentHour, "weather")
-    local shouldRain = seededRandom(seed + 1, 1, 100) <= rainChance
-    local shouldThunder = shouldRain and seededRandom(seed + 2, 1, 100) <= thunderChance
+    -- Get weather from pattern
+    local weather = getWeatherFromPattern(gameDay, currentHour)
     
-    -- Calculate duration (consecutive hours with same weather)
+    -- Calculate duration
     local durationHours = 1
-    local wasRaining = shouldRain
     for i = 1, 12 do
         local futureHour = (currentHour + i) % 24
         local futureDay = gameDay + math.floor((currentHour + i) / 24)
-        local futureSeed = getSeed(futureDay, futureHour, "weather")
-        local futureChance = calcRainChance(futureDay, futureHour, wasRaining)
-        local futureRain = seededRandom(futureSeed + 1, 1, 100) <= futureChance
-        if futureRain == shouldRain then
+        local futureWeather = getWeatherFromPattern(futureDay, futureHour)
+        if futureWeather.isRaining == weather.isRaining then
             durationHours = durationHours + 1
-            wasRaining = futureRain
         else
             break
         end
@@ -409,37 +558,33 @@ function forecast.applyWeather(currentTick, gameDay)
     local command = nil
     local changed = false
     
-    if shouldThunder and not globalWeatherState.isThundering then
+    if weather.isThundering and not globalWeatherState.isThundering then
         command = "weather thunder " .. duration
         globalWeatherState.isRaining = true
         globalWeatherState.isThundering = true
         changed = true
-    elseif shouldRain and not globalWeatherState.isRaining then
+    elseif weather.isRaining and not globalWeatherState.isRaining then
         command = "weather rain " .. duration
         globalWeatherState.isRaining = true
         globalWeatherState.isThundering = false
         changed = true
-    elseif not shouldRain and globalWeatherState.isRaining then
+    elseif not weather.isRaining and globalWeatherState.isRaining then
         command = "weather clear " .. duration
         globalWeatherState.isRaining = false
         globalWeatherState.isThundering = false
         changed = true
-    elseif globalWeatherState.isThundering and not shouldThunder and shouldRain then
+    elseif globalWeatherState.isThundering and not weather.isThundering and weather.isRaining then
         command = "weather rain " .. duration
         globalWeatherState.isThundering = false
         changed = true
     end
     
     if command and commands then
-        local ok, success, results = pcall(function()
+        local ok, success = pcall(function()
             return commands.exec(command)
         end)
         if ok and success then
             print("[WEATHER] " .. command)
-        elseif ok then
-            print("[WEATHER] Command rejected")
-        else
-            print("[WEATHER] Command failed: " .. tostring(success))
         end
     end
     
@@ -450,7 +595,7 @@ function forecast.applyWeather(currentTick, gameDay)
         command = command,
         isRaining = globalWeatherState.isRaining,
         isThundering = globalWeatherState.isThundering,
-        rainChance = rainChance
+        rainChance = weather.rainChance
     }
 end
 
@@ -463,7 +608,7 @@ function forecast.getGlobalWeather()
     }
 end
 
--- Sync weather state from environment detector data
+-- Sync weather state
 function forecast.syncWeather(isRaining, isThundering)
     globalWeatherState.isRaining = isRaining == true
     globalWeatherState.isThundering = isThundering == true
@@ -471,22 +616,36 @@ end
 
 -- Generate complete forecast for all stations
 function forecast.generate(stationsData)
-    local gameTime = os.time() * 1000
+    local gameTime = os.time()
     local gameDay = os.day()
-    local currentHour = math.floor(gameTime / forecast.TICKS_PER_HOUR) % 24
+    local currentHour = math.floor((gameTime * 1000) / forecast.TICKS_PER_HOUR) % 24
     
-    forecast.clearCacheIfNeeded(gameDay, currentHour)
+    -- Pre-generate weather pattern
+    generate120DayPattern(gameDay)
     
     -- Generate per-station forecasts
     local stationForecasts = {}
+    local stationList = {}
+    
     for stationId, station in pairs(registeredStations) do
         stationForecasts[stationId] = {
             hourly = forecast.generate24Hour(stationId, gameDay, currentHour),
-            fiveDay = forecast.generate5Day(stationId, gameDay)
+            fiveDay = forecast.generate5Day(stationId, gameDay),
+            stationName = station.name,
+            biome = station.biome,
+            dimension = station.dimension
         }
+        table.insert(stationList, {
+            id = stationId,
+            name = station.name,
+            biome = station.biome
+        })
     end
     
-    -- Get primary station for current conditions
+    -- Get current weather
+    local weather = getWeatherFromPattern(gameDay, currentHour)
+    
+    -- Get primary station
     local primaryStation = nil
     local primaryId = nil
     for id, s in pairs(registeredStations) do
@@ -496,7 +655,7 @@ function forecast.generate(stationsData)
     end
     
     local currentTemp = 15
-    local currentState = forecast.WEATHER_STATES.CLEAR
+    local currentState = "clear"
     local currentBiome = "minecraft:plains"
     
     if primaryStation then
@@ -506,47 +665,37 @@ function forecast.generate(stationsData)
             primaryStation.altitude,
             gameDay,
             currentHour,
-            globalWeatherState.isRaining
+            weather.isRaining
         )
-        currentState = forecast.getDisplayWeather(
-            globalWeatherState.isRaining,
-            globalWeatherState.isThundering,
-            currentBiome,
-            currentTemp
-        )
+        currentState = forecast.getDisplayWeather(weather, currentBiome, currentTemp)
     end
     
-    -- Generate summary
-    local stateNames = {
-        [forecast.WEATHER_STATES.CLEAR] = "Clear skies",
-        [forecast.WEATHER_STATES.CLOUDY] = "Cloudy",
-        [forecast.WEATHER_STATES.RAIN] = "Rain",
-        [forecast.WEATHER_STATES.STORM] = "Storms",
-        [forecast.WEATHER_STATES.THUNDER] = "Thunderstorms",
-        [forecast.WEATHER_STATES.SNOW] = "Snow"
-    }
-    local summary = stateNames[currentState] or "Unknown"
+    local simpleState = forecast.getSimpleState(currentState)
     
     return {
         version = version,
         generatedAt = os.epoch("utc"),
-        gameTime = os.time(),
+        gameTime = gameTime,
         gameDay = gameDay,
         currentHour = currentHour,
         season = forecast.getSeasonName(gameDay),
         current = {
-            state = currentState,
+            state = simpleState,
+            detailedState = currentState,
             temperature = currentTemp,
             stationId = primaryId,
-            rainChance = calcRainChance(gameDay, currentHour, false),
-            thunderChance = calcThunderChance(calcRainChance(gameDay, currentHour, false), gameDay)
+            rainChance = weather.rainChance,
+            thunderChance = weather.thunderChance,
+            cloudCover = weather.cloudCover,
+            weatherNote = forecast.getWeatherNote(currentState)
         },
         globalWeather = {
             isRaining = globalWeatherState.isRaining,
             isThundering = globalWeatherState.isThundering
         },
         stationForecasts = deepCopy(stationForecasts),
-        summary = summary
+        stations = stationList,
+        summary = forecast.getWeatherNote(currentState)
     }
 end
 

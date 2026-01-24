@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer for Weather Station Display with 24-hour and 5-day forecasts
-local version = "4.0.0"
+-- UI Renderer v6.0.0 - Weather display with symbols, colors, station cycling
+local version = "6.0.0"
 
 local renderer = {}
 
@@ -12,7 +12,7 @@ local monitor = nil
 local monitorWidth = 51
 local monitorHeight = 19
 
--- Initialize renderer with monitor
+-- Initialize renderer
 function renderer.init(mon)
     monitor = mon or term
     if monitor.getSize then
@@ -21,7 +21,7 @@ function renderer.init(mon)
     return true
 end
 
--- Clear screen with background color
+-- Clear screen
 function renderer.clear(bgColor)
     bgColor = bgColor or assets.colors.background
     monitor.setBackgroundColor(bgColor)
@@ -31,6 +31,7 @@ end
 
 -- Draw text at position
 function renderer.drawText(x, y, text, fgColor, bgColor)
+    if y < 1 or y > monitorHeight then return end
     monitor.setCursorPos(x, y)
     if fgColor then monitor.setTextColor(fgColor) end
     if bgColor then monitor.setBackgroundColor(bgColor) end
@@ -43,84 +44,76 @@ function renderer.drawCenteredText(y, text, fgColor, bgColor)
     renderer.drawText(x, y, text, fgColor, bgColor)
 end
 
--- Draw a horizontal line
+-- Draw horizontal line
 function renderer.drawLine(y, char, fgColor, bgColor)
     char = char or "-"
     local line = string.rep(char, monitorWidth)
-    renderer.drawText(1, y, line, fgColor, bgColor)
+    renderer.drawText(1, y, line, fgColor or assets.colors.textSecondary, bgColor or assets.colors.background)
 end
 
--- Draw a box
-function renderer.drawBox(x, y, width, height, bgColor, borderColor)
+-- Draw box
+function renderer.drawBox(x, y, width, height, bgColor)
     bgColor = bgColor or assets.colors.panelBg
     for row = y, y + height - 1 do
-        monitor.setCursorPos(x, row)
-        monitor.setBackgroundColor(bgColor)
-        monitor.write(string.rep(" ", width))
+        if row >= 1 and row <= monitorHeight then
+            monitor.setCursorPos(x, row)
+            monitor.setBackgroundColor(bgColor)
+            monitor.write(string.rep(" ", width))
+        end
     end
 end
 
--- Draw header bar with page indicator
+-- Draw header
 function renderer.drawHeader(title, time, pageIndicator)
-    renderer.drawBox(1, 1, monitorWidth, 3, assets.colors.headerBg)
-    renderer.drawCenteredText(2, title, assets.colors.textPrimary, assets.colors.headerBg)
+    renderer.drawBox(1, 1, monitorWidth, 2, assets.colors.headerBg)
+    
+    if pageIndicator then
+        renderer.drawText(2, 1, pageIndicator, assets.colors.textSecondary, assets.colors.headerBg)
+    end
+    
+    renderer.drawCenteredText(1, title, assets.colors.textPrimary, assets.colors.headerBg)
     
     if time then
         local timeStr = textutils.formatTime(time, false)
-        renderer.drawText(monitorWidth - #timeStr, 2, timeStr, assets.colors.textHighlight, assets.colors.headerBg)
-    end
-    
-    if pageIndicator then
-        renderer.drawText(2, 2, pageIndicator, assets.colors.textSecondary, assets.colors.headerBg)
+        renderer.drawText(monitorWidth - #timeStr, 1, timeStr, assets.colors.textHighlight, assets.colors.headerBg)
     end
 end
 
--- Draw footer bar
+-- Draw footer
 function renderer.drawFooter(text)
     local y = monitorHeight
     renderer.drawBox(1, y, monitorWidth, 1, assets.colors.footerBg)
     renderer.drawCenteredText(y, text, assets.colors.textSecondary, assets.colors.footerBg)
 end
 
--- Map weather state to icon name
-local function getIconForState(state)
-    local stateToIcon = {
-        ["clear"] = "sun",
-        ["cloudy"] = "cloud",
-        ["rain"] = "rain",
-        ["storm"] = "storm",
-        ["thunder"] = "lightning",
-        ["snow"] = "snow"
-    }
-    return stateToIcon[state] or "sun"
-end
-
--- Draw weather icon at position
-function renderer.drawIcon(x, y, state, color)
-    local iconName = getIconForState(state)
-    local icon = assets.icons[iconName] or assets.icons.sun
-    color = color or assets.colors.textPrimary
-    
-    for i, line in ipairs(icon) do
-        renderer.drawText(x, y + i - 1, line, color, assets.colors.background)
-    end
-end
-
 -- Draw large weather icon
 function renderer.drawLargeIcon(x, y, state, color)
-    local iconName = getIconForState(state)
-    local icon = assets.largeIcons[iconName] or assets.largeIcons.sun
-    color = color or assets.colors.textPrimary
+    local icon = assets.getLargeIcon(state)
+    color = color or assets.getWeatherColor(state)
     
     for i, line in ipairs(icon) do
-        renderer.drawText(x, y + i - 1, line, color, assets.colors.background)
+        if y + i - 1 <= monitorHeight then
+            renderer.drawText(x, y + i - 1, line, color, assets.colors.background)
+        end
     end
 end
 
--- Draw temperature display in Celsius
-function renderer.drawTemperature(x, y, tempCelsius, label)
-    local tempColor = assets.getTemperatureColor(tempCelsius)
-    local tempStr = tostring(math.floor(tempCelsius)) .. "C"
+-- Draw small weather icon
+function renderer.drawSmallIcon(x, y, state, color)
+    local icon = assets.getIcon(state)
+    color = color or assets.getWeatherColor(state)
+    
+    for i, line in ipairs(icon) do
+        if y + i - 1 <= monitorHeight then
+            renderer.drawText(x, y + i - 1, line, color, assets.colors.background)
+        end
+    end
+end
+
+-- Draw temperature
+function renderer.drawTemperature(x, y, tempC, label)
+    local tempColor = assets.getTemperatureColor(tempC)
+    local tempStr = tostring(math.floor(tempC)) .. "C"
     
     if label then
         renderer.drawText(x, y, label .. ": ", assets.colors.textSecondary, assets.colors.background)
@@ -130,24 +123,10 @@ function renderer.drawTemperature(x, y, tempCelsius, label)
     end
 end
 
--- Draw progress bar
-function renderer.drawProgressBar(x, y, width, value, maxValue, fgColor, bgColor)
-    fgColor = fgColor or assets.colors.textHighlight
-    bgColor = bgColor or assets.colors.gray
-    
-    local filled = math.floor((value / maxValue) * width)
-    
-    monitor.setCursorPos(x, y)
-    monitor.setBackgroundColor(fgColor)
-    monitor.write(string.rep(" ", filled))
-    monitor.setBackgroundColor(bgColor)
-    monitor.write(string.rep(" ", width - filled))
-end
-
--- Draw current conditions page (uses station-specific forecast data)
-function renderer.drawCurrentPage(forecast, stations, stationWeather, selectedStationId)
+-- Draw current conditions page
+function renderer.drawCurrentPage(forecast)
     if not forecast or not forecast.current then
-        renderer.drawCenteredText(10, "No weather data available", assets.colors.textWarning)
+        renderer.drawCenteredText(10, "No weather data", assets.colors.textWarning)
         return
     end
     
@@ -155,187 +134,121 @@ function renderer.drawCurrentPage(forecast, stations, stationWeather, selectedSt
     local state = current.state or "clear"
     local weatherColor = assets.getWeatherColor(state)
     
-    -- Try to get station-specific data
-    local stationId = selectedStationId or current.stationId
-    local stationData = nil
-    local stationForecast = nil
-    
-    if stationId then
-        -- Get station weather data
-        if stationWeather and stationWeather[tostring(stationId)] then
-            stationData = stationWeather[tostring(stationId)].data
-        end
-        -- Get station forecast for consistent temperature
-        if forecast.stationForecasts and forecast.stationForecasts[tostring(stationId)] then
-            stationForecast = forecast.stationForecasts[tostring(stationId)]
-        end
-    end
-    
-    -- Use station data if available, otherwise fall back to current.data
-    local data = stationData or current.data
-    
-    -- Get temperature from station's first forecast hour for consistency
-    local tempC = current.temperature or 15
-    if stationForecast and stationForecast.hourly and stationForecast.hourly[1] then
-        tempC = stationForecast.hourly[1].temperature
-    elseif data and data.temperatureCelsius then
-        tempC = data.temperatureCelsius
-    end
-    
-    -- Get rain chance from station forecast
-    local rainChance = current.rainChance or 15
-    if stationForecast and stationForecast.hourly and stationForecast.hourly[1] then
-        rainChance = stationForecast.hourly[1].rainChance
-    end
-    
     -- Draw large icon
-    renderer.drawLargeIcon(3, 6, state, weatherColor)
+    renderer.drawLargeIcon(2, 4, state, weatherColor)
     
-    -- Draw current conditions text
-    local startX = 20
-    renderer.drawText(startX, 5, "Current Conditions", assets.colors.textHighlight, assets.colors.background)
-    renderer.drawLine(6, "-", assets.colors.textSecondary, assets.colors.background)
+    -- Current conditions
+    local startX = 18
+    renderer.drawText(startX, 4, "Current Conditions", assets.colors.textHighlight, assets.colors.background)
+    renderer.drawLine(5, "-", assets.colors.textSecondary, assets.colors.background)
     
     -- Weather state
-    local stateStr = state:sub(1,1):upper() .. state:sub(2)
-    renderer.drawText(startX, 7, "Weather: " .. stateStr, weatherColor, assets.colors.background)
+    local stateStr = (state:sub(1,1):upper() .. state:sub(2)):gsub("partlycloudy", "Partly Cloudy")
+    renderer.drawText(startX, 6, "Weather: " .. stateStr, weatherColor, assets.colors.background)
     
-    -- Temperature (from forecast for consistency)
-    renderer.drawTemperature(startX, 8, tempC, "Temp")
+    -- Temperature
+    renderer.drawTemperature(startX, 7, current.temperature or 15, "Temp")
     
-    if data then
-        -- Humidity
-        local humidityValue = data.humidityPercent or (data.humidity and data.humidity * 100) or 50
-        renderer.drawText(startX, 9, "Humidity: " .. string.format("%.0f%%", humidityValue), 
-            assets.colors.textPrimary, assets.colors.background)
-        
-        -- Biome
-        if data.biome then
-            local biome = data.biome:gsub("minecraft:", ""):gsub("_", " ")
-            renderer.drawText(startX, 10, "Biome: " .. biome, assets.colors.textSecondary, assets.colors.background)
-        end
-        
-        -- Altitude
-        if data.altitude then
-            renderer.drawText(startX, 11, "Altitude: " .. tostring(math.floor(data.altitude)) .. "m", 
-                assets.colors.textSecondary, assets.colors.background)
-        end
-        
-        -- Rain/Thunder status
-        local statusY = 12
-        if data.isThundering == true then
-            renderer.drawText(startX, statusY, "* Thunderstorm", assets.colors.thunder, assets.colors.background)
-            statusY = statusY + 1
-        elseif data.isRaining == true then
-            local rainPct = data.rainLevel and data.rainLevel > 0 and string.format(" (%.0f%%)", data.rainLevel * 100) or ""
-            renderer.drawText(startX, statusY, "* Raining" .. rainPct, assets.colors.rain, assets.colors.background)
-            statusY = statusY + 1
-        end
-        
-        -- Rain chance (from forecast)
-        renderer.drawText(startX, statusY, "Rain chance: " .. tostring(rainChance) .. "%", 
-            assets.colors.textSecondary, assets.colors.background)
+    -- Rain chance
+    renderer.drawText(startX, 8, "Rain: " .. tostring(current.rainChance or 0) .. "%", 
+        (current.rainChance or 0) > 50 and assets.colors.rain or assets.colors.textSecondary, 
+        assets.colors.background)
+    
+    -- Weather note
+    if current.weatherNote then
+        renderer.drawText(startX, 9, current.weatherNote, assets.colors.textSecondary, assets.colors.background)
     end
     
-    -- Season display
+    -- Biome
+    if forecast.stationBiome then
+        local biome = forecast.stationBiome:gsub("minecraft:", ""):gsub("_", " ")
+        if #biome > 20 then biome = biome:sub(1, 18) .. ".." end
+        renderer.drawText(startX, 11, "Biome: " .. biome, assets.colors.textSecondary, assets.colors.background)
+    end
+    
+    -- Season
     if forecast.season then
-        renderer.drawText(3, monitorHeight - 4, "Season: " .. forecast.season, assets.colors.textHighlight, assets.colors.background)
+        renderer.drawText(2, monitorHeight - 3, "Season: " .. forecast.season, assets.colors.textHighlight, assets.colors.background)
     end
     
     -- Summary
     if forecast.summary then
-        renderer.drawCenteredText(monitorHeight - 3, forecast.summary, assets.colors.textPrimary, assets.colors.background)
+        renderer.drawCenteredText(monitorHeight - 2, forecast.summary, assets.colors.textPrimary, assets.colors.background)
     end
 end
 
 -- Draw 24-hour forecast page
-function renderer.draw24HourPage(forecast, stationId)
-    renderer.drawText(2, 5, "24-Hour Forecast", assets.colors.textHighlight, assets.colors.background)
-    renderer.drawLine(6, "-", assets.colors.textSecondary, assets.colors.background)
+function renderer.draw24HourPage(forecast)
+    renderer.drawText(2, 3, "24-Hour Forecast", assets.colors.textHighlight, assets.colors.background)
+    renderer.drawLine(4, "-", assets.colors.textSecondary, assets.colors.background)
     
-    local hourlyData = nil
-    
-    -- Try to get station-specific forecast
-    if stationId and forecast.stationForecasts and forecast.stationForecasts[tostring(stationId)] then
-        hourlyData = forecast.stationForecasts[tostring(stationId)].hourly
-    end
-    
-    -- Fall back to global hourly forecasts
-    if not hourlyData then
-        hourlyData = forecast.hourlyForecasts
-    end
-    
-    if not hourlyData then
-        renderer.drawText(2, 8, "No hourly forecast available", assets.colors.textWarning, assets.colors.background)
+    local hourlyData = forecast.hourly
+    if not hourlyData or #hourlyData == 0 then
+        renderer.drawCenteredText(8, "No hourly forecast available", assets.colors.textWarning)
         return
     end
     
-    -- Display hours in columns (show 12 hours that fit)
-    local y = 7
-    local colWidth = math.floor(monitorWidth / 6)
+    -- Display 12 hours in 2 rows
+    local colWidth = math.floor((monitorWidth - 2) / 6)
+    local y = 5
     
     for row = 0, 1 do
         for col = 0, 5 do
-            local hourIndex = row * 6 + col + 1  -- 1-based indexing
+            local hourIndex = row * 6 + col + 1
             local hourForecast = hourlyData[hourIndex]
             
             if hourForecast then
                 local x = 2 + col * colWidth
-                local rowY = y + row * 5
+                local rowY = y + row * 6
                 
-                -- Hour label with day/night indicator
+                -- Hour
                 local hourStr = string.format("%02d:00", hourForecast.hour)
-                local timeIndicator = hourForecast.isDay and "D" or "N"
-                renderer.drawText(x, rowY, hourStr .. timeIndicator, assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(x, rowY, hourStr, assets.colors.textSecondary, assets.colors.background)
                 
-                -- Weather icon (small)
+                -- Weather symbol with color
                 local state = hourForecast.predictedState or "clear"
+                local symbol = assets.getWeatherSymbol(state)
                 local color = assets.getWeatherColor(state)
-                local iconChar = state == "clear" and "*" or (state == "rain" and "~" or (state == "snow" and "o" or (state == "thunder" and "!" or ".")))
-                renderer.drawText(x, rowY + 1, iconChar, color, assets.colors.background)
+                renderer.drawText(x, rowY + 1, symbol .. symbol .. symbol, color, assets.colors.background)
                 
-                -- Temperature
+                -- Temperature with color
                 if hourForecast.temperature then
-                    renderer.drawText(x + 2, rowY + 1, tostring(math.floor(hourForecast.temperature)) .. "C", 
-                        assets.getTemperatureColor(hourForecast.temperature), assets.colors.background)
+                    local tempStr = tostring(math.floor(hourForecast.temperature)) .. "C"
+                    renderer.drawText(x, rowY + 2, tempStr, assets.getTemperatureColor(hourForecast.temperature), assets.colors.background)
                 end
                 
                 -- Rain chance
                 if hourForecast.rainChance then
+                    local rainStr = tostring(hourForecast.rainChance) .. "%"
                     local rainColor = hourForecast.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                    renderer.drawText(x, rowY + 2, tostring(hourForecast.rainChance) .. "%", rainColor, assets.colors.background)
+                    renderer.drawText(x, rowY + 3, rainStr, rainColor, assets.colors.background)
                 end
+                
+                -- Day/Night indicator
+                local dnStr = hourForecast.isDay and "D" or "N"
+                renderer.drawText(x + colWidth - 2, rowY, dnStr, 
+                    hourForecast.isDay and assets.colors.clear or assets.colors.textSecondary, 
+                    assets.colors.background)
             end
         end
     end
 end
 
 -- Draw 5-day forecast page
-function renderer.draw5DayPage(forecast, stationId)
-    renderer.drawText(2, 5, "5-Day Forecast", assets.colors.textHighlight, assets.colors.background)
-    renderer.drawLine(6, "-", assets.colors.textSecondary, assets.colors.background)
+function renderer.draw5DayPage(forecast)
+    renderer.drawText(2, 3, "5-Day Forecast", assets.colors.textHighlight, assets.colors.background)
+    renderer.drawLine(4, "-", assets.colors.textSecondary, assets.colors.background)
     
-    local fiveDayData = nil
-    
-    -- Try to get station-specific forecast
-    if stationId and forecast.stationForecasts and forecast.stationForecasts[tostring(stationId)] then
-        fiveDayData = forecast.stationForecasts[tostring(stationId)].fiveDay
-    end
-    
-    -- Fall back to global 5-day forecast
-    if not fiveDayData then
-        fiveDayData = forecast.fiveDayForecasts
-    end
-    
-    if not fiveDayData then
-        renderer.drawText(2, 8, "No 5-day forecast available", assets.colors.textWarning, assets.colors.background)
+    local fiveDayData = forecast.fiveDay
+    if not fiveDayData or #fiveDayData == 0 then
+        renderer.drawCenteredText(8, "No 5-day forecast available", assets.colors.textWarning)
         return
     end
     
-    local y = 7
-    local colWidth = math.floor(monitorWidth / 5)
+    local colWidth = math.floor((monitorWidth - 2) / 5)
+    local y = 5
     
-    for i = 1, 5 do  -- 1-based indexing
+    for i = 1, 5 do
         local dayForecast = fiveDayData[i]
         if dayForecast then
             local x = 2 + (i - 1) * colWidth
@@ -343,86 +256,161 @@ function renderer.draw5DayPage(forecast, stationId)
             -- Day name
             local dayName = dayForecast.dayName or ("Day " .. i)
             if #dayName > colWidth - 1 then
-                dayName = dayName:sub(1, colWidth - 1)
+                dayName = dayName:sub(1, colWidth - 2)
             end
             renderer.drawText(x, y, dayName, assets.colors.textHighlight, assets.colors.background)
             
-            -- Weather state
+            -- Weather symbol row
             local state = dayForecast.predictedState or "clear"
-            local stateStr = state:sub(1,1):upper() .. state:sub(2,4)
-            renderer.drawText(x, y + 1, stateStr, assets.getWeatherColor(state), assets.colors.background)
+            local symbol = assets.getWeatherSymbol(state)
+            local color = assets.getWeatherColor(state)
+            renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, assets.colors.background)
             
-            -- High/Low temps
-            if dayForecast.highTemp and dayForecast.lowTemp then
+            -- State name
+            local stateStr = state:sub(1, colWidth - 1)
+            renderer.drawText(x, y + 2, stateStr, color, assets.colors.background)
+            
+            -- High temp
+            if dayForecast.highTemp then
                 local highStr = "H:" .. tostring(math.floor(dayForecast.highTemp))
+                renderer.drawText(x, y + 4, highStr, assets.colors.hot, assets.colors.background)
+            end
+            
+            -- Low temp
+            if dayForecast.lowTemp then
                 local lowStr = "L:" .. tostring(math.floor(dayForecast.lowTemp))
-                renderer.drawText(x, y + 2, highStr, assets.colors.hot, assets.colors.background)
-                renderer.drawText(x, y + 3, lowStr, assets.colors.cold, assets.colors.background)
+                renderer.drawText(x, y + 5, lowStr, assets.colors.cold, assets.colors.background)
             end
             
             -- Rain chance
             if dayForecast.rainChance then
+                local rainStr = tostring(dayForecast.rainChance) .. "%"
                 local rainColor = dayForecast.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                renderer.drawText(x, y + 4, tostring(dayForecast.rainChance) .. "%", rainColor, assets.colors.background)
+                renderer.drawText(x, y + 6, rainStr, rainColor, assets.colors.background)
             end
             
-            -- Confidence
-            local confChar = dayForecast.confidence == "high" and "+" or (dayForecast.confidence == "medium" and "o" or "-")
-            renderer.drawText(x + colWidth - 2, y + 4, confChar, assets.colors.textSecondary, assets.colors.background)
+            -- Weather note (truncated)
+            if dayForecast.weatherNote then
+                local note = dayForecast.weatherNote
+                if #note > colWidth - 1 then
+                    note = note:sub(1, colWidth - 2)
+                end
+                renderer.drawText(x, y + 8, note, assets.colors.textSecondary, assets.colors.background)
+            end
+            
+            -- Confidence indicator
+            local confStr = dayForecast.confidence == "high" and "+" or (dayForecast.confidence == "medium" and "o" or "-")
+            renderer.drawText(x + colWidth - 2, y + 6, confStr, assets.colors.textSecondary, assets.colors.background)
         end
     end
     
-    -- Season at bottom
+    -- Season
     if forecast.season then
-        renderer.drawText(2, y + 6, "Season: " .. forecast.season, assets.colors.textSecondary, assets.colors.background)
+        renderer.drawText(2, monitorHeight - 2, "Season: " .. forecast.season, assets.colors.textSecondary, assets.colors.background)
     end
 end
 
--- Draw legacy forecast page (for compatibility)
-function renderer.drawForecastPage(forecast)
-    renderer.draw24HourPage(forecast, nil)
+-- Draw stations overview page
+function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
+    renderer.drawText(2, 3, "Station Overview", assets.colors.textHighlight, assets.colors.background)
+    renderer.drawLine(4, "-", assets.colors.textSecondary, assets.colors.background)
+    
+    if not stations or #stations == 0 then
+        renderer.drawCenteredText(8, "No stations registered", assets.colors.textWarning)
+        return
+    end
+    
+    local y = 5
+    local maxStations = math.min(#stations, monitorHeight - 7)
+    
+    for i = 1, maxStations do
+        local station = stations[i]
+        if station then
+            local isCurrentStation = (i == currentStationIndex)
+            local prefix = isCurrentStation and "> " or "  "
+            local nameColor = isCurrentStation and assets.colors.textHighlight or assets.colors.textPrimary
+            
+            -- Station name
+            local name = station.name or ("Station " .. tostring(station.id))
+            if #name > 20 then name = name:sub(1, 18) .. ".." end
+            renderer.drawText(2, y, prefix .. name, nameColor, assets.colors.background)
+            
+            -- Get station forecast if available
+            local stationId = tostring(station.id)
+            local stationForecast = forecast.stationForecasts and forecast.stationForecasts[stationId]
+            
+            if stationForecast and stationForecast.hourly and stationForecast.hourly[1] then
+                local current = stationForecast.hourly[1]
+                
+                -- Weather symbol
+                local state = current.predictedState or "clear"
+                local symbol = assets.getWeatherSymbol(state)
+                local color = assets.getWeatherColor(state)
+                renderer.drawText(26, y, symbol, color, assets.colors.background)
+                
+                -- Temperature
+                if current.temperature then
+                    renderer.drawText(30, y, tostring(math.floor(current.temperature)) .. "C", 
+                        assets.getTemperatureColor(current.temperature), assets.colors.background)
+                end
+                
+                -- Rain chance
+                if current.rainChance then
+                    local rainStr = tostring(current.rainChance) .. "%"
+                    local rainColor = current.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
+                    renderer.drawText(38, y, rainStr, rainColor, assets.colors.background)
+                end
+            end
+            
+            -- Biome (truncated)
+            if station.biome then
+                local biome = station.biome:gsub("minecraft:", ""):gsub("_", " ")
+                if #biome > 15 then biome = biome:sub(1, 13) .. ".." end
+                renderer.drawText(46, y, biome, assets.colors.textSecondary, assets.colors.background)
+            end
+            
+            y = y + 1
+        end
+    end
+    
+    -- Instructions
+    renderer.drawText(2, monitorHeight - 2, "Press S to cycle stations", assets.colors.textSecondary, assets.colors.background)
 end
 
 -- Render specific page
-function renderer.renderPage(forecast, stations, page, stationIndex, stationWeather)
+function renderer.renderPage(forecast, stations, page, stationIndex)
     renderer.clear()
     
     local pageNames = {
-        current = "1/3",
-        hourly = "2/3 24hr",
-        fiveday = "3/3 5day"
+        current = "1/4 Now",
+        hourly = "2/4 24hr",
+        fiveday = "3/4 5day",
+        overview = "4/4 All"
     }
     
-    -- Get station name for header
-    local stationName = "Weather Station"
-    if stations and stationIndex and stations[stationIndex] then
-        stationName = stations[stationIndex].name or stationName
+    local stationName = forecast.stationName or "Weather Station"
+    local stationIndicator = ""
+    if stations and #stations > 1 then
+        stationIndicator = " [" .. tostring(stationIndex) .. "/" .. tostring(#stations) .. "]"
     end
     
-    renderer.drawHeader(stationName, os.time(), pageNames[page] or "")
-    
-    local selectedStationId = nil
-    if stations and stationIndex and stations[stationIndex] then
-        selectedStationId = stations[stationIndex].id
-    end
+    renderer.drawHeader(stationName .. stationIndicator, os.time(), pageNames[page] or "")
     
     if page == "current" then
-        renderer.drawCurrentPage(forecast, stations, stationWeather, selectedStationId)
+        renderer.drawCurrentPage(forecast)
     elseif page == "hourly" then
-        renderer.draw24HourPage(forecast, selectedStationId)
+        renderer.draw24HourPage(forecast)
     elseif page == "fiveday" then
-        renderer.draw5DayPage(forecast, selectedStationId)
+        renderer.draw5DayPage(forecast)
+    elseif page == "overview" then
+        renderer.drawOverviewPage(forecast, stations, stationIndex)
     else
-        renderer.drawCurrentPage(forecast, stations, stationWeather, selectedStationId)
+        renderer.drawCurrentPage(forecast)
     end
     
     -- Footer with day info
-    renderer.drawFooter("Day " .. tostring(os.day()) .. " | v4.0")
-end
-
--- Full screen render (legacy)
-function renderer.render(forecast, stations)
-    renderer.renderPage(forecast, stations, "current", 1)
+    local day = forecast.gameDay or os.day()
+    renderer.drawFooter("Day " .. tostring(day) .. " | v" .. version)
 end
 
 -- Get dimensions

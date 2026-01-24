@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station - Biome detector, position reporter, and forecast display
--- Master handles all forecasting - station just registers and displays
-local version = "5.0.3"
+-- Weather Station v6.0.0 - Biome detector, forecast display with station cycling
+-- Master handles all forecasting - station registers and displays
+local version = "6.0.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -14,7 +14,6 @@ print("[INFO] Station Name: " .. config.STATION_NAME)
 
 -- Network protocols
 local STATION_PROTOCOL = "weather_net"
-local DISPLAY_PROTOCOL = "weather_display"
 
 -- Find and open wireless modem
 print("[INFO] Searching for wireless modem...")
@@ -26,12 +25,12 @@ for _, side in ipairs(peripheral.getNames()) do
     end
 end
 if not modemSide then
-    error("[ERROR] No wireless modem found! Please attach a wireless modem.")
+    error("[ERROR] No wireless modem found!")
 end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
 rednet.open(modemSide)
 
--- Find monitor for display (optional)
+-- Find monitor (optional)
 print("[INFO] Searching for monitor...")
 local monitor = nil
 for _, name in ipairs(peripheral.getNames()) do
@@ -42,7 +41,7 @@ for _, name in ipairs(peripheral.getNames()) do
     end
 end
 
--- Load display modules only if monitor found
+-- Load display modules
 local renderer = nil
 local assets = nil
 if monitor then
@@ -51,15 +50,15 @@ if monitor then
     renderer = dofile("weatherSystem/station/ui_renderer.lua")
     renderer.init(monitor)
 else
-    print("[INFO] No monitor found - headless station mode")
+    print("[INFO] No monitor - headless mode")
 end
 
--- Find environment detector (Advanced Peripherals)
+-- Find environment detector
 print("[INFO] Searching for environment detector...")
 local envDetector = nil
 for _, name in ipairs(peripheral.getNames()) do
     local pType = peripheral.getType(name)
-    if pType == "environmentDetector" or pType:find("environment") then
+    if pType == "environmentDetector" or (pType and pType:find("environment")) then
         envDetector = peripheral.wrap(name)
         break
     end
@@ -67,11 +66,12 @@ end
 if envDetector then
     print("[INFO] Environment detector found")
 else
-    print("[WARN] No environment detector - using config location only")
+    print("[WARN] No environment detector")
 end
 
--- Current state
+-- State
 local currentForecast = nil
+local allStations = {}
 local localBiomeData = {
     biome = config.LOCATION.biome or "minecraft:plains",
     dimension = config.LOCATION.dimension or "minecraft:overworld",
@@ -81,10 +81,11 @@ local localBiomeData = {
 
 -- Display state
 local currentPage = "current"
-local pageList = {"current", "hourly", "fiveday"}
+local pageList = {"current", "hourly", "fiveday", "overview"}
 local currentPageIndex = 1
+local displayStationIndex = 1
 
--- Detect local biome and position from environment detector
+-- Detect biome data
 local function detectBiomeData()
     if not envDetector then return end
     
@@ -100,9 +101,6 @@ local function detectBiomeData()
             if pos then
                 localBiomeData.position = {x = pos.x or 0, y = pos.y or 64, z = pos.z or 0}
                 localBiomeData.altitude = pos.y or 64
-                config.LOCATION.x = pos.x
-                config.LOCATION.y = pos.y
-                config.LOCATION.z = pos.z
             end
         end
     end)
@@ -118,19 +116,18 @@ local function registerStation()
         timestamp = os.epoch("utc"),
         station = {
             id = config.STATION_ID,
-            name = config.STATION_NAME,
-            biome = localBiomeData.biome,
-            dimension = localBiomeData.dimension,
-            altitude = localBiomeData.altitude,
-            position = localBiomeData.position,
-            hasDisplay = monitor ~= nil
-        }
+            name = config.STATION_NAME
+        },
+        biome = localBiomeData.biome,
+        dimension = localBiomeData.dimension,
+        altitude = localBiomeData.altitude,
+        position = localBiomeData.position
     }
     rednet.broadcast(packet, STATION_PROTOCOL)
-    print("[REG] Registered: " .. localBiomeData.biome .. " @ " .. tostring(localBiomeData.altitude) .. "m")
+    print("[REG] Registered: " .. localBiomeData.biome)
 end
 
--- Send heartbeat with current biome data
+-- Send heartbeat
 local function sendHeartbeat()
     detectBiomeData()
     
@@ -139,21 +136,21 @@ local function sendHeartbeat()
         timestamp = os.epoch("utc"),
         station = {
             id = config.STATION_ID,
-            name = config.STATION_NAME,
-            biome = localBiomeData.biome,
-            dimension = localBiomeData.dimension,
-            altitude = localBiomeData.altitude,
-            position = localBiomeData.position
-        }
+            name = config.STATION_NAME
+        },
+        biome = localBiomeData.biome,
+        dimension = localBiomeData.dimension,
+        altitude = localBiomeData.altitude,
+        position = localBiomeData.position
     }
     rednet.broadcast(packet, STATION_PROTOCOL)
 end
 
--- Request forecast from master
+-- Request forecast
 local function requestForecast()
     local packet = {
         type = "forecast_request",
-        stationId = config.STATION_ID,
+        station = { id = config.STATION_ID },
         timestamp = os.epoch("utc")
     }
     rednet.broadcast(packet, STATION_PROTOCOL)
@@ -162,7 +159,6 @@ end
 -- Process received forecast
 local function processForecast(data)
     if data.type == "forecast_response" or data.type == "forecast_broadcast" then
-        -- New simplified format - forecast data is directly in packet
         currentForecast = {
             generatedAt = data.generatedAt,
             gameTime = data.gameTime,
@@ -173,47 +169,57 @@ local function processForecast(data)
             current = data.current,
             summary = data.summary,
             hourly = data.hourly or {},
-            fiveDay = data.fiveDay or {}
+            fiveDay = data.fiveDay or {},
+            stationForecasts = data.stationForecasts or {},
+            stations = data.stations or {}
         }
+        
+        -- Update station list
+        if data.stations and #data.stations > 0 then
+            allStations = data.stations
+        end
+        
         return true
     end
     return false
 end
 
--- Draw loading screen
-local function drawLoadingScreen()
-    if not monitor or not renderer then return end
-    renderer.clear()
-    renderer.drawHeader(config.STATION_NAME, os.time())
-    renderer.drawCenteredText(10, "Connecting to Weather Master...", assets.colors.textHighlight)
-    renderer.drawCenteredText(12, "Biome: " .. localBiomeData.biome:gsub("minecraft:", ""), assets.colors.textSecondary)
-    renderer.drawFooter("Weather Station v" .. version)
+-- Get current display station
+local function getCurrentDisplayStation()
+    if #allStations == 0 then
+        return {
+            id = config.STATION_ID,
+            name = config.STATION_NAME,
+            biome = localBiomeData.biome
+        }
+    end
+    
+    local idx = ((displayStationIndex - 1) % #allStations) + 1
+    return allStations[idx]
 end
 
--- Draw offline screen
-local function drawOfflineScreen()
-    if not monitor or not renderer then return end
-    renderer.clear()
-    renderer.drawHeader(config.STATION_NAME, os.time())
-    renderer.drawCenteredText(8, "OFFLINE", assets.colors.textWarning)
-    renderer.drawCenteredText(10, "Biome: " .. localBiomeData.biome:gsub("minecraft:", ""):gsub("_", " "), assets.colors.textSecondary)
-    renderer.drawCenteredText(11, "Altitude: " .. tostring(localBiomeData.altitude) .. "m", assets.colors.textSecondary)
-    renderer.drawCenteredText(13, "Waiting for master...", assets.colors.textSecondary)
-    renderer.drawFooter("No forecast data")
-end
-
--- Heartbeat loop - send biome updates to master
-local function heartbeatLoop()
-    while true do
-        sendHeartbeat()
-        sleep(config.SEND_INTERVAL)
+-- Cycle to next station
+local function cycleStation()
+    if #allStations > 1 then
+        displayStationIndex = displayStationIndex + 1
+        if displayStationIndex > #allStations then
+            displayStationIndex = 1
+        end
     end
 end
 
--- Receive loop - get forecasts from master
+-- Heartbeat loop
+local function heartbeatLoop()
+    while true do
+        sendHeartbeat()
+        sleep(config.SEND_INTERVAL or 60)
+    end
+end
+
+-- Receive loop
 local function receiveLoop()
     while true do
-        local senderId, message, protocol = rednet.receive(nil, 30)
+        local senderId, message = rednet.receive(nil, 30)
         if senderId and message then
             local packet = message
             if type(message) == "string" then
@@ -227,7 +233,6 @@ local function receiveLoop()
             end
         end
         
-        -- Request forecast if we don't have one
         if not currentForecast then
             requestForecast()
         end
@@ -238,46 +243,78 @@ end
 local function displayLoop()
     if not monitor or not renderer then return end
     
-    drawLoadingScreen()
+    -- Show loading
+    renderer.clear()
+    renderer.drawHeader(config.STATION_NAME, os.time(), "Loading")
+    renderer.drawCenteredText(10, "Connecting to Weather Master...", assets.colors.textHighlight)
+    renderer.drawFooter("Weather Station v" .. version)
     
     while true do
         if currentForecast then
-            local myStationId = tostring(config.STATION_ID)
+            local station = getCurrentDisplayStation()
+            local stationName = station and station.name or config.STATION_NAME
+            local stationId = station and tostring(station.id) or tostring(config.STATION_ID)
             
-            local stations = {{
-                id = config.STATION_ID,
-                name = config.STATION_NAME
-            }}
+            local stationForecast = currentForecast.stationForecasts and 
+                                    currentForecast.stationForecasts[stationId]
             
-            local stationWeather = {
-                [myStationId] = {
-                    data = {
-                        biome = localBiomeData.biome,
-                        altitude = localBiomeData.altitude,
-                        dimension = localBiomeData.dimension
-                    }
-                }
+            -- Build display data
+            local displayForecast = {
+                generatedAt = currentForecast.generatedAt,
+                gameTime = currentForecast.gameTime,
+                gameDay = currentForecast.gameDay,
+                currentHour = currentForecast.currentHour,
+                season = currentForecast.season,
+                globalWeather = currentForecast.globalWeather,
+                current = currentForecast.current,
+                summary = currentForecast.summary,
+                hourly = stationForecast and stationForecast.hourly or currentForecast.hourly or {},
+                fiveDay = stationForecast and stationForecast.fiveDay or currentForecast.fiveDay or {},
+                stationName = stationName,
+                stationBiome = station and station.biome or localBiomeData.biome,
+                allStations = allStations
             }
             
-            renderer.renderPage(currentForecast, stations, currentPage, 1, stationWeather)
+            -- Render page
+            renderer.renderPage(displayForecast, allStations, currentPage, displayStationIndex)
         else
-            drawOfflineScreen()
+            -- Offline screen
+            renderer.clear()
+            renderer.drawHeader(config.STATION_NAME, os.time(), "Offline")
+            renderer.drawCenteredText(8, "OFFLINE", assets.colors.textWarning)
+            renderer.drawCenteredText(10, "Biome: " .. localBiomeData.biome:gsub("minecraft:", ""):gsub("_", " "), assets.colors.textSecondary)
+            renderer.drawCenteredText(12, "Waiting for master...", assets.colors.textSecondary)
+            renderer.drawFooter("No forecast data")
         end
-        sleep(5)
+        sleep(3)
     end
 end
 
--- Page cycling loop
-local function pageCycleLoop()
+-- Page and station cycling loop
+local function cycleLoop()
     if not monitor then return end
     
+    local pageTime = 8  -- Seconds per page
+    local lastPageChange = os.epoch("utc")
+    
     while true do
-        sleep(8)
-        currentPageIndex = currentPageIndex + 1
-        if currentPageIndex > #pageList then
-            currentPageIndex = 1
+        local now = os.epoch("utc")
+        
+        -- Cycle pages
+        if now - lastPageChange > pageTime * 1000 then
+            currentPageIndex = currentPageIndex + 1
+            if currentPageIndex > #pageList then
+                currentPageIndex = 1
+                -- After showing all pages, switch station
+                if #allStations > 1 then
+                    cycleStation()
+                end
+            end
+            currentPage = pageList[currentPageIndex]
+            lastPageChange = now
         end
-        currentPage = pageList[currentPageIndex]
+        
+        sleep(1)
     end
 end
 
@@ -302,18 +339,21 @@ local function inputLoop()
                 if currentPageIndex < 1 then currentPageIndex = #pageList end
                 currentPage = pageList[currentPageIndex]
             end
+        elseif key == keys.s then
+            cycleStation()
+            print("[INFO] Switched to station " .. displayStationIndex)
         end
     end
 end
 
--- Main entry point
+-- Main
 print("[INFO] Weather Station running...")
-print("[INFO] Keys: Q=quit, R=refresh, N/P=page")
+print("[INFO] Keys: Q=quit, R=refresh, N/P=page, S=station")
 
 registerStation()
 
 if monitor then
-    parallel.waitForAny(heartbeatLoop, receiveLoop, displayLoop, pageCycleLoop, inputLoop)
+    parallel.waitForAny(heartbeatLoop, receiveLoop, displayLoop, cycleLoop, inputLoop)
 else
     parallel.waitForAny(heartbeatLoop, receiveLoop, inputLoop)
 end
