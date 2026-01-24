@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.2.2 - Biome detector, forecast display with animated weather
+-- Weather Station v6.3.0 - Responsive display with big screen support
 -- Master handles all forecasting - station registers and displays
-local version = "6.2.2"
+local version = "6.3.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 

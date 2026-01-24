@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.2.1 - Weather display with animated symbols and station cycling
-local version = "6.2.1"
+-- UI Renderer v6.3.0 - Responsive weather display with animated symbols
+local version = "6.3.0"
 
 local renderer = {}
 
@@ -12,6 +12,10 @@ local monitor = nil
 local monitorWidth = 51
 local monitorHeight = 19
 
+-- Display size thresholds
+local isLargeDisplay = false  -- Width >= 60 and height >= 25
+local isXLDisplay = false     -- Width >= 80 and height >= 30
+
 -- Initialize renderer with assets reference
 function renderer.init(mon, assetsModule)
     monitor = mon or term
@@ -19,6 +23,9 @@ function renderer.init(mon, assetsModule)
     if monitor.getSize then
         monitorWidth, monitorHeight = monitor.getSize()
     end
+    -- Determine display size category
+    isLargeDisplay = monitorWidth >= 60 and monitorHeight >= 25
+    isXLDisplay = monitorWidth >= 80 and monitorHeight >= 30
     return true
 end
 
@@ -87,12 +94,17 @@ function renderer.drawFooter(text)
     renderer.drawCenteredText(y, text, assets.colors.textSecondary, assets.colors.footerBg)
 end
 
--- Draw large weather icon (animated)
+-- Draw large weather icon (animated, size based on display)
 function renderer.drawLargeIcon(x, y, state, color)
     local icon = nil
     
-    -- Try to get animated icon first
-    if assets.animatedLargeIcons and assets.animatedLargeIcons[state] then
+    -- Use XL icons on large displays
+    if isLargeDisplay and assets.animatedXLIcons and assets.animatedXLIcons[state] then
+        local frames = assets.animatedXLIcons[state]
+        local frameIndex = (assets.animFrame % #frames) + 1
+        icon = frames[frameIndex]
+    -- Use regular large icons on standard displays
+    elseif assets.animatedLargeIcons and assets.animatedLargeIcons[state] then
         local frames = assets.animatedLargeIcons[state]
         local frameIndex = (assets.animFrame % #frames) + 1
         icon = frames[frameIndex]
@@ -147,37 +159,55 @@ function renderer.drawCurrentPage(forecast)
     local state = assets.convertWeatherForBiome(current.state or "clear", biome)
     local weatherColor = assets.getWeatherColor(state)
     
-    -- Draw large icon (y=5 to avoid header overlap)
-    renderer.drawLargeIcon(2, 5, state, weatherColor)
+    -- Position adjustments for large displays
+    local iconY = 5
+    local startX = isLargeDisplay and 26 or 18
+    local titleY = isLargeDisplay and 5 or 4
     
-    -- Current conditions
-    local startX = 18
-    renderer.drawText(startX, 4, "Current Conditions", assets.colors.textHighlight, assets.colors.background)
-    renderer.drawLine(5, "-", assets.colors.textSecondary, assets.colors.background)
+    -- Draw large icon (y=5 to avoid header overlap)
+    renderer.drawLargeIcon(2, iconY, state, weatherColor)
+    
+    -- Current conditions header
+    renderer.drawText(startX, titleY, "Current Conditions", assets.colors.textHighlight, assets.colors.background)
+    renderer.drawLine(titleY + 1, "-", assets.colors.textSecondary, assets.colors.background)
     
     -- Weather state
     local stateStr = (state:sub(1,1):upper() .. state:sub(2)):gsub("partlycloudy", "Partly Cloudy")
-    renderer.drawText(startX, 6, "Weather: " .. stateStr, weatherColor, assets.colors.background)
+    renderer.drawText(startX, titleY + 2, "Weather: " .. stateStr, weatherColor, assets.colors.background)
     
     -- Temperature
-    renderer.drawTemperature(startX, 7, current.temperature or 15, "Temp")
+    renderer.drawTemperature(startX, titleY + 3, current.temperature or 15, "Temp")
     
     -- Rain chance
-    renderer.drawText(startX, 8, "Rain: " .. tostring(current.rainChance or 0) .. "%", 
+    renderer.drawText(startX, titleY + 4, "Rain: " .. tostring(current.rainChance or 0) .. "%", 
         (current.rainChance or 0) > 50 and assets.colors.rain or assets.colors.textSecondary, 
         assets.colors.background)
     
     -- Weather note - convert based on biome
     if current.weatherNote then
         local note = assets.convertNoteForBiome(current.weatherNote, biome)
-        renderer.drawText(startX, 9, note, assets.colors.textSecondary, assets.colors.background)
+        renderer.drawText(startX, titleY + 5, note, assets.colors.textSecondary, assets.colors.background)
+    end
+    
+    -- Extra info on large displays
+    if isLargeDisplay then
+        -- Humidity (if available)
+        if current.humidity then
+            renderer.drawText(startX, titleY + 7, "Humidity: " .. tostring(current.humidity) .. "%", assets.colors.textSecondary, assets.colors.background)
+        end
+        
+        -- Wind (if available)
+        if current.windSpeed then
+            renderer.drawText(startX, titleY + 8, "Wind: " .. tostring(current.windSpeed) .. " km/h", assets.colors.textSecondary, assets.colors.background)
+        end
     end
     
     -- Biome
     if forecast.stationBiome then
         local biomeDisplay = forecast.stationBiome:gsub("minecraft:", ""):gsub("_", " ")
-        if #biomeDisplay > 20 then biomeDisplay = biomeDisplay:sub(1, 18) .. ".." end
-        renderer.drawText(startX, 11, "Biome: " .. biomeDisplay, assets.colors.textSecondary, assets.colors.background)
+        local maxLen = isLargeDisplay and 30 or 20
+        if #biomeDisplay > maxLen then biomeDisplay = biomeDisplay:sub(1, maxLen - 2) .. ".." end
+        renderer.drawText(startX, titleY + (isLargeDisplay and 10 or 7), "Biome: " .. biomeDisplay, assets.colors.textSecondary, assets.colors.background)
     end
     
     -- Season
@@ -331,6 +361,18 @@ end
 function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
     renderer.drawText(2, 3, "All Stations", assets.colors.textHighlight, assets.colors.background)
     
+    if not stations or #stations == 0 then
+        renderer.drawCenteredText(8, "No stations registered", assets.colors.textWarning)
+        return
+    end
+    
+    -- Large display: show icons and more details per station
+    if isLargeDisplay then
+        renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
+        return
+    end
+    
+    -- Standard display: compact table view
     -- Column headers
     renderer.drawText(2, 4, "Station", assets.colors.textSecondary, assets.colors.background)
     renderer.drawText(22, 4, "Wx", assets.colors.textSecondary, assets.colors.background)
@@ -338,11 +380,6 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
     renderer.drawText(33, 4, "Rain", assets.colors.textSecondary, assets.colors.background)
     renderer.drawText(40, 4, "Biome", assets.colors.textSecondary, assets.colors.background)
     renderer.drawLine(5, "-", assets.colors.textSecondary, assets.colors.background)
-    
-    if not stations or #stations == 0 then
-        renderer.drawCenteredText(8, "No stations registered", assets.colors.textWarning)
-        return
-    end
     
     local y = 6
     local maxStations = math.min(#stations, monitorHeight - 8)
@@ -412,6 +449,109 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
     end
     
     -- Show count
+    renderer.drawText(2, monitorHeight - 2, tostring(#stations) .. " station(s) online", assets.colors.textSecondary, assets.colors.background)
+end
+
+-- Large display overview with icons and detailed info per station
+function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
+    renderer.drawLine(4, "-", assets.colors.textSecondary, assets.colors.background)
+    
+    -- Calculate layout - show stations in a grid with small icons
+    local stationsPerRow = isXLDisplay and 4 or 3
+    local colWidth = math.floor((monitorWidth - 4) / stationsPerRow)
+    local rowHeight = 8
+    local startY = 5
+    local maxRows = math.floor((monitorHeight - startY - 3) / rowHeight)
+    local maxStations = math.min(#stations, stationsPerRow * maxRows)
+    
+    for i = 1, maxStations do
+        local station = stations[i]
+        if station then
+            local row = math.floor((i - 1) / stationsPerRow)
+            local col = (i - 1) % stationsPerRow
+            local x = 2 + col * colWidth
+            local y = startY + row * rowHeight
+            
+            local isCurrentStation = (i == currentStationIndex)
+            local nameColor = isCurrentStation and assets.colors.textHighlight or assets.colors.textPrimary
+            
+            -- Station name with indicator
+            local name = station.name or ("Station " .. tostring(station.id))
+            if #name > colWidth - 2 then name = name:sub(1, colWidth - 4) .. ".." end
+            local prefix = isCurrentStation and ">" or " "
+            renderer.drawText(x, y, prefix .. name, nameColor, assets.colors.background)
+            
+            -- Get station forecast
+            local stationId = station.id
+            local stationBiome = station.biome
+            local stationForecast = nil
+            
+            if forecast.stationForecasts then
+                stationForecast = forecast.stationForecasts[tostring(stationId)] or 
+                                  forecast.stationForecasts[stationId]
+            end
+            
+            local current = nil
+            if stationForecast and stationForecast.hourly and stationForecast.hourly[1] then
+                current = stationForecast.hourly[1]
+            end
+            
+            if current then
+                -- Weather state with icon
+                local state = assets.convertWeatherForBiome(current.predictedState or "clear", stationBiome)
+                local color = assets.getWeatherColor(state)
+                
+                -- Draw small 3x3 icon
+                local icon = assets.getIcon(state)
+                if icon then
+                    for j, line in ipairs(icon) do
+                        renderer.drawText(x, y + j, line, color, assets.colors.background)
+                    end
+                end
+                
+                -- Weather info next to icon
+                local infoX = x + 7
+                
+                -- State name
+                local stateStr = state:sub(1, colWidth - 9)
+                renderer.drawText(infoX, y + 1, stateStr, color, assets.colors.background)
+                
+                -- Temperature
+                if current.temperature then
+                    local tempStr = tostring(math.floor(current.temperature)) .. "C"
+                    renderer.drawText(infoX, y + 2, tempStr, assets.getTemperatureColor(current.temperature), assets.colors.background)
+                end
+                
+                -- Rain chance
+                if current.rainChance then
+                    local rainStr = tostring(current.rainChance) .. "% rain"
+                    local rainColor = current.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
+                    renderer.drawText(infoX, y + 3, rainStr, rainColor, assets.colors.background)
+                end
+                
+                -- High/Low temps (if available from 5-day)
+                if stationForecast and stationForecast.fiveDay and stationForecast.fiveDay[1] then
+                    local today = stationForecast.fiveDay[1]
+                    if today.highTemp and today.lowTemp then
+                        local hiLoStr = "H:" .. math.floor(today.highTemp) .. " L:" .. math.floor(today.lowTemp)
+                        renderer.drawText(x, y + 5, hiLoStr, assets.colors.textSecondary, assets.colors.background)
+                    end
+                end
+            else
+                -- No data
+                renderer.drawText(x, y + 2, "No data", assets.colors.textSecondary, assets.colors.background)
+            end
+            
+            -- Biome
+            if station.biome then
+                local biomeStr = station.biome:gsub("minecraft:", ""):gsub("_", " ")
+                if #biomeStr > colWidth - 2 then biomeStr = biomeStr:sub(1, colWidth - 4) .. ".." end
+                renderer.drawText(x, y + 6, biomeStr, assets.colors.gray, assets.colors.background)
+            end
+        end
+    end
+    
+    -- Show count at bottom
     renderer.drawText(2, monitorHeight - 2, tostring(#stations) .. " station(s) online", assets.colors.textSecondary, assets.colors.background)
 end
 
