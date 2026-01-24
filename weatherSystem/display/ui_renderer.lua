@@ -1,6 +1,6 @@
 -- weatherSystem/display/ui_renderer.lua
 -- UI Renderer for Weather Display with 24-hour and 5-day forecasts
-local version = "3.0.0"
+local version = "3.0.1"
 
 local renderer = {}
 

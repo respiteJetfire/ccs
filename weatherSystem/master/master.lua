@@ -91,6 +91,29 @@ local function processWeatherPacket(senderId, packet)
     return false
 end
 
+-- Get weather data for all active stations
+local function getStationWeather()
+    local stations = db.getActiveStations()
+    local stationWeather = {}
+    
+    for _, station in ipairs(stations) do
+        local latest = db.getLatestWeatherByStation(station.id)
+        if latest and latest.data then
+            -- Create a shallow copy to avoid shared table references
+            local dataCopy = {}
+            for k, v in pairs(latest.data) do
+                dataCopy[k] = v
+            end
+            -- Add calculated values
+            dataCopy.temperatureCelsius = forecast.getTemperatureCelsius(latest.data)
+            dataCopy.humidityPercent = forecast.getHumidityPercent(latest.data)
+            stationWeather[tostring(station.id)] = {data = dataCopy}
+        end
+    end
+    
+    return stationWeather
+end
+
 -- Generate and update forecast
 local function updateForecast()
     local historyData = db.getRecentWeather(50)
@@ -134,29 +157,6 @@ local function updateForecast()
         print("[FORECAST] Rain chance: " .. tostring(currentForecast.current.rainChance or 0) .. "%")
     end
     return currentForecast
-end
-
--- Get weather data for all active stations
-local function getStationWeather()
-    local stations = db.getActiveStations()
-    local stationWeather = {}
-    
-    for _, station in ipairs(stations) do
-        local latest = db.getLatestWeatherByStation(station.id)
-        if latest and latest.data then
-            -- Create a shallow copy to avoid shared table references
-            local dataCopy = {}
-            for k, v in pairs(latest.data) do
-                dataCopy[k] = v
-            end
-            -- Add calculated values
-            dataCopy.temperatureCelsius = forecast.getTemperatureCelsius(latest.data)
-            dataCopy.humidityPercent = forecast.getHumidityPercent(latest.data)
-            stationWeather[tostring(station.id)] = {data = dataCopy}
-        end
-    end
-    
-    return stationWeather
 end
 
 -- Broadcast forecast to all displays
