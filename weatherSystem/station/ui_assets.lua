@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_assets.lua
 -- UI Assets v6.0.0 - Icons, Colors, and Weather Symbols
-local version = "6.0.0"
+local version = "6.1.0"
 
 local assets = {}
 

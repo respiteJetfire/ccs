@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
 -- UI Renderer v6.0.0 - Weather display with symbols, colors, station cycling
-local version = "6.0.0"
+local version = "6.1.0"
 
 local renderer = {}
 
