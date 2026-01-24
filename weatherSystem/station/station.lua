@@ -1,6 +1,6 @@
 -- weatherSystem/station/station.lua
 -- Weather Station - Collects weather data and sends to master
-local version = "2.0.0"
+local version = "2.0.1"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -140,8 +140,8 @@ end
 
 -- Function to send data to master
 local function sendToMaster(packet)
-    local serialized = weatherpacket.serialize(packet)
-    rednet.broadcast(serialized, config.PROTOCOL)
+    -- Don't pre-serialize - network.broadcast() handles serialization
+    rednet.broadcast(packet, config.PROTOCOL)
     print("[SEND] Weather packet sent at " .. textutils.formatTime(os.time()))
 end
 
