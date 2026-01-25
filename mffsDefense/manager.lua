@@ -99,7 +99,7 @@ local function isNighttime()
     if envDetector and envDetector.getTime then
         local ok, result = pcall(envDetector.getTime)
         if ok and type(result) == "number" then
-            time = result
+            time = result % 24000  -- Get time of day (0-23999)
         end
     end
     -- fallback: try envDetector.isNight
@@ -114,6 +114,7 @@ local function isNighttime()
         local hour = os.time()
         time = (hour / 24) * 24000
     end
+    print("[DEBUG] Current Minecraft time: " .. tostring(time))
     return time >= 13000 and time < 23000
 end
 
@@ -260,7 +261,7 @@ while true do
     end
     
     -- Status display
-    local mcTime = (envDetector and envDetector.getTime and envDetector.getTime()) or os.time()
+    local mcTime = (envDetector and envDetector.getTime and (envDetector.getTime() % 24000)) or os.time()
     local mcTimeStr = formatMcTime(mcTime)
     local statusColor = defensesActive and "[ACTIVE]" or "[STANDBY]"
     local powerStatus = latestEnergyData.percentFull >= MIN_POWER_PERCENT and "ON" or "OFF"
