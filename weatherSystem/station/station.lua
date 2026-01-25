@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
 -- Weather Station v6.3.9 - Improved XL cloud designs
 -- Master handles all forecasting - station registers and displays
-local version = "8.0.0"
+local version = "8.0.1"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -275,6 +275,16 @@ local function selectNextOtherStation()
                           currentForecast.stationForecasts[stationId]
 end
 
+-- Get current page list based on whether we have other stations (will be redefined after colony init)
+local getActivePageList
+getActivePageList = function()
+    if #allStations > 1 then
+        return {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+    else
+        return {"current", "hourly", "fiveday", "overview"}
+    end
+end
+
 local function listContains(list, value)
     for i, v in ipairs(list) do
         if v == value then
@@ -334,16 +344,6 @@ local function recomputePageAssignments()
                 selectNextOtherStation()
             end
         end
-    end
-end
-
--- Get current page list based on whether we have other stations (will be redefined after colony init)
-local getActivePageList
-getActivePageList = function()
-    if #allStations > 1 then
-        return {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
-    else
-        return {"current", "hourly", "fiveday", "overview"}
     end
 end
 
@@ -591,5 +591,11 @@ else
 end
 
 rednet.close(modemSide)
-if monitor and renderer then renderer.clear() end
+if monitor and renderers then
+    for i, r in ipairs(renderers) do
+        r.clear()
+    end
+elseif monitor and renderer then
+    renderer.clear()
+end
 print("[INFO] Station stopped")
