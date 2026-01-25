@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.8 - Fix XL icon black backgrounds
-local version = "6.3.8"
+-- UI Renderer v6.3.9 - Improved XL cloud designs
+local version = "6.3.9"
 
 local renderer = {}
 
