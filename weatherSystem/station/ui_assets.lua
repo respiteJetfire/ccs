@@ -78,7 +78,6 @@ assets.animatedSymbols = {
     fog = {"=", "-", "=", "-"},              -- Fog shifting
     unknown = {"?", "?", "?", "?"}
 }
-}
 
 -- Get current animation frame for a weather state
 function assets.getAnimatedSymbol(state)
