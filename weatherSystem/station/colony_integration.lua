@@ -1,6 +1,7 @@
 -- weatherSystem/station/colony_integration.lua
--- Colony Integrator Module (per plans/colony_integration_design.md)
-local version = "1.1.0"
+-- Colony Integrator Module for Advanced Peripherals colonyIntegrator
+-- API Reference: https://docs.advanced-peripherals.de/latest/peripherals/colony_integrator/
+local version = "1.2.0"
 
 local colony = {}
 
@@ -23,17 +24,20 @@ local function now()
     return os.epoch("utc")
 end
 
--- Safe peripheral call wrapper
-local function safeCall(fn, ...)
-    if not peripheralRef or type(fn) ~= "string" then return nil, "no_peripheral" end
-    local ok, res = pcall(function()
-        return peripheralRef[fn](peripheralRef, ...)
-    end)
-    if not ok then return nil, res end
-    return res
+-- Safe peripheral method call wrapper
+local function safeCall(methodName)
+    if not peripheralRef then return nil, "no_peripheral" end
+    if type(methodName) ~= "string" then return nil, "invalid_method" end
+    
+    local method = peripheralRef[methodName]
+    if not method then return nil, "method_not_found" end
+    
+    local ok, result = pcall(method, peripheralRef)
+    if not ok then return nil, result end
+    return result
 end
 
--- Scan for colony peripheral (match any peripheral type containing "colony")
+-- Scan for colony peripheral (match "colonyIntegrator" type)
 function colony.detect()
     local names = peripheral.getNames()
     if not names then 
@@ -44,8 +48,9 @@ function colony.detect()
     
     for _, name in ipairs(names) do
         local ok, pType = pcall(peripheral.getType, name)
-        if ok and pType and type(pType) == "string" then
-            if pType:lower():find("colony") then
+        if ok and pType then
+            -- Check for exact match or partial match
+            if pType == "colonyIntegrator" or (type(pType) == "string" and pType:lower():find("colony")) then
                 local ok2, wrap = pcall(peripheral.wrap, name)
                 if ok2 and wrap then
                     peripheralRef = wrap
@@ -83,20 +88,20 @@ function colony.getStatus()
     return "available"
 end
 
--- Internal function to build safe summary from peripheral data
-local function buildSummary(raw)
+-- Internal function to build summary data structure
+local function buildSummary()
     local s = {
         timestamp = now(),
-        colonyId = raw and raw.colonyId or nil,
-        colonyName = raw and raw.colonyName or (raw and raw.name) or "Unknown Colony",
+        colonyId = nil,
+        colonyName = "Unknown Colony",
         summary = {
-            citizenCount = raw and raw.citizenCount or 0,
-            maxCitizens = raw and raw.maxCitizens or 0,
-            happiness = raw and raw.happiness or 0,
-            isActive = raw and raw.isActive or false,
-            isUnderAttack = raw and raw.isUnderAttack or false,
-            gravesCount = raw and raw.gravesCount or 0,
-            constructionSites = raw and raw.constructionSites or 0
+            citizenCount = 0,
+            maxCitizens = 0,
+            happiness = 0,
+            isActive = false,
+            isUnderAttack = false,
+            gravesCount = 0,
+            constructionSites = 0
         },
         citizens = {},
         buildings = {},
@@ -120,54 +125,74 @@ function colony.update()
         if not peripheralRef then return false end
     end
 
-    local newData = buildSummary(nil)
-    -- Collect summary if available
-    local ok, res = pcall(function()
-        -- Many colony peripherals expose varying APIs; attempt common method names
-        local raw = nil
-        if peripheralRef.getColonyInfo then raw = peripheralRef.getColonyInfo() end
-        if not raw and peripheralRef.getSummary then raw = peripheralRef.getSummary() end
-        if not raw and peripheralRef.getStatus then raw = peripheralRef.getStatus() end
-        if raw and type(raw) == "table" then
-            newData = buildSummary(raw)
-            -- try citizens
-            if cfg.COLLECT_CITIZENS and peripheralRef.getCitizens then
-                local ok2, citizens = pcall(function() return peripheralRef.getCitizens() end)
-                if ok2 and type(citizens) == "table" then
-                    -- limit list
-                    local maxC = tonumber(cfg.MAX_CITIZENS_DISPLAY) or 15
-                    for i = 1, math.min(#citizens, maxC) do
-                        table.insert(newData.citizens, citizens[i])
-                    end
+    local newData = buildSummary()
+    
+    -- Collect colony info using the correct API methods
+    local ok, err = pcall(function()
+        -- Basic colony info
+        local colonyId = safeCall("getColonyID")
+        if colonyId then newData.colonyId = colonyId end
+        
+        local colonyName = safeCall("getColonyName")
+        if colonyName then newData.colonyName = colonyName end
+        
+        local happiness = safeCall("getHappiness")
+        if happiness then newData.summary.happiness = happiness end
+        
+        local isActive = safeCall("isActive")
+        if isActive ~= nil then newData.summary.isActive = isActive end
+        
+        local isUnderAttack = safeCall("isUnderAttack")
+        if isUnderAttack ~= nil then newData.summary.isUnderAttack = isUnderAttack end
+        
+        local citizenCount = safeCall("amountOfCitizens")
+        if citizenCount then newData.summary.citizenCount = citizenCount end
+        
+        local maxCitizens = safeCall("maxOfCitizens")
+        if maxCitizens then newData.summary.maxCitizens = maxCitizens end
+        
+        local gravesCount = safeCall("amountOfGraves")
+        if gravesCount then newData.summary.gravesCount = gravesCount end
+        
+        local constructionSites = safeCall("amountOfConstructionSites")
+        if constructionSites then newData.summary.constructionSites = constructionSites end
+        
+        -- Citizens list
+        if cfg.COLLECT_CITIZENS then
+            local citizens = safeCall("getCitizens")
+            if citizens and type(citizens) == "table" then
+                local maxC = tonumber(cfg.MAX_CITIZENS_DISPLAY) or 15
+                for i = 1, math.min(#citizens, maxC) do
+                    table.insert(newData.citizens, citizens[i])
                 end
             end
+        end
 
-            -- buildings summary
-            if cfg.COLLECT_BUILDINGS and peripheralRef.getBuildings then
-                local ok2, buildings = pcall(function() return peripheralRef.getBuildings() end)
-                if ok2 and type(buildings) == "table" then
-                    newData.buildings = buildings
+        -- Buildings list
+        if cfg.COLLECT_BUILDINGS then
+            local buildings = safeCall("getBuildings")
+            if buildings and type(buildings) == "table" then
+                newData.buildings = buildings
+            end
+        end
+
+        -- Requests list
+        if cfg.COLLECT_REQUESTS then
+            local requests = safeCall("getRequests")
+            if requests and type(requests) == "table" then
+                local maxR = tonumber(cfg.MAX_REQUESTS_DISPLAY) or 10
+                newData.requests = { count = #requests, items = {} }
+                for i = 1, math.min(#requests, maxR) do
+                    table.insert(newData.requests.items, requests[i])
                 end
             end
+        end
 
-            -- requests
-            if cfg.COLLECT_REQUESTS and peripheralRef.getRequests then
-                local ok2, requests = pcall(function() return peripheralRef.getRequests() end)
-                if ok2 and type(requests) == "table" then
-                    local maxR = tonumber(cfg.MAX_REQUESTS_DISPLAY) or 10
-                    newData.requests = { count = #requests, items = {} }
-                    for i = 1, math.min(#requests, maxR) do
-                        table.insert(newData.requests.items, requests[i])
-                    end
-                end
-            end
-
-            -- research
-            if cfg.COLLECT_RESEARCH and peripheralRef.getResearch then
-                local ok2, research = pcall(function() return peripheralRef.getResearch() end)
-                if ok2 and type(research) == "table" then
-                    newData.research = research
-                end
+        -- Research tree
+        if cfg.COLLECT_RESEARCH then
+            local research = safeCall("getResearch")
+            if research and type(research) == "table" then
+                newData.research = research
             end
         end
     end)
