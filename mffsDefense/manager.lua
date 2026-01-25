@@ -1,6 +1,6 @@
 -- CC script to automatically control MFFS peripherals based on time and mob detection
 -- Monitors power levels and activates defenses when needed
-local version = "0.3.0"
+local version = "0.3.1"
 local CHECK_INTERVAL = 2  -- seconds between checks
 local MOB_DETECTION_RANGE = 30  -- blocks
 local MIN_POWER_PERCENT = 50  -- minimum power % to activate defenses
@@ -94,12 +94,26 @@ local defensesActive = false
 
 -- Function to check if it's nighttime
 local function isNighttime()
-    if envDetector and envDetector.isNight then
-        local ok, result = pcall(envDetector.isNight)
-        if ok then return result end
+    -- Prefer Minecraft tick time if possible
+    local time = nil
+    if envDetector and envDetector.getTime then
+        local ok, result = pcall(envDetector.getTime)
+        if ok and type(result) == "number" then
+            time = result
+        end
     end
-    -- fallback to os.time() if needed
-    local time = os.time()
+    -- fallback: try envDetector.isNight
+    if time == nil and envDetector and envDetector.isNight then
+        local ok, result = pcall(envDetector.isNight)
+        if ok and type(result) == "boolean" then
+            return result
+        end
+    end
+    -- fallback: convert os.time() (0-24) to ticks (0-23999)
+    if time == nil then
+        local hour = os.time()
+        time = (hour / 24) * 24000
+    end
     return time >= 13000 and time < 23000
 end
 
