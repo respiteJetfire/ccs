@@ -2,7 +2,7 @@
 -- Weather Forecast Engine v6.0.0
 -- 120-day deterministic forecast with realistic weather patterns
 -- Storm systems, fronts, and biome-specific conditions
-local version = "6.0.0"
+local version = "6.0.1"
 
 local forecast = {}
 
@@ -581,10 +581,15 @@ function forecast.applyWeather(currentTick, gameDay)
     
     if command and commands then
         local ok, success = pcall(function()
-            return commands.exec(command)
+            -- Use async execution to suppress chat output to operators
+            if commands.async and commands.async.exec then
+                return commands.async.exec(command)
+            else
+                return commands.exec(command)
+            end
         end)
         if ok and success then
-            print("[WEATHER] " .. command)
+            -- Silent execution (no logging or feedback)
         end
     end
     
