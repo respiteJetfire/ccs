@@ -1,7 +1,7 @@
 -- weatherSystem/station/client.lua
 -- Weather Client v1.1.0 - Display-only, no registration
 -- Shows weather forecasts from other stations without registering as a station
-local version = "1.1.0"
+local version = "1.2.0"
 
 print("[INFO] Weather Client v" .. version .. " starting...")
 
@@ -107,7 +107,11 @@ for _, name in ipairs(peripheral.getNames()) do
 end
 
 if not monitor then
-    error("[ERROR] No monitor found! Client requires a monitor.")
+    print("[WARN] No monitor found! Using computer terminal as display.")
+    monitor = term
+    if monitor.setTextScale then
+        monitor.setTextScale(config.DISPLAY.TEXT_SCALE)
+    end
 end
 
 -- Load display modules

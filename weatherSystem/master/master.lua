@@ -2,9 +2,26 @@
 -- Weather Master Controller v5.0.0
 -- Master controls ALL forecasting - stations just register biome/position and display
 -- Global weather with biome-specific display (rain = snow in cold biomes)
-local version = "5.0.0"
+local version = "5.1.0"
+
 
 print("[INFO] Weather Master v" .. version .. " starting...")
+
+-- Find environment detector
+print("[INFO] Searching for environment detector...")
+local envDetector = nil
+for _, name in ipairs(peripheral.getNames()) do
+    local pType = peripheral.getType(name)
+    if pType == "environmentDetector" or (pType and pType:find("environment")) then
+        envDetector = peripheral.wrap(name)
+        break
+    end
+end
+if envDetector then
+    print("[INFO] Environment detector found!")
+else
+    print("[WARN] No environment detector found! Time sync and real weather unavailable.")
+end
 
 -- Check for commands API (Command Computer)
 local hasCommandsAPI = commands ~= nil
@@ -235,25 +252,64 @@ local function broadcastLoop()
 end
 
 -- Weather control loop (applies weather changes using commands API)
+
 local function weatherControlLoop()
     if not hasCommandsAPI then
         print("[WEATHER] Weather control disabled (no commands API)")
         return
     end
-    
+
     print("[WEATHER] Weather control loop started")
-    
+
+    local lastEnvTime = nil
     while true do
-        local currentTick = os.time() * 1000
-        local gameDay = os.day()
-        
-        -- Apply weather based on forecast
-        local result = forecast.applyWeather(currentTick, gameDay)
-        if result and result.changed then
-            print("[WEATHER] Changed: " .. (result.command or ""))
+        local envTime, envDay, isRaining, isThundering
+        if envDetector then
+            -- Use environment detector for real world time and weather
+            local ok1, t = pcall(function() return envDetector.getTime and envDetector.getTime() end)
+            local ok2, d = pcall(function() return envDetector.getDay and envDetector.getDay() end)
+            local ok3, rain = pcall(function() return envDetector.isRaining and envDetector.isRaining() end)
+            local ok4, thunder = pcall(function() return envDetector.isThundering and envDetector.isThundering() end)
+            envTime = (ok1 and t) or nil
+            envDay = (ok2 and d) or nil
+            isRaining = (ok3 and rain) or false
+            isThundering = (ok4 and thunder) or false
         end
-        
-        sleep(CONFIG.WEATHER_CHECK_INTERVAL)
+
+        -- Only update weather at the start of each new hour
+        local currentHour = nil
+        if envTime then
+            currentHour = math.floor((envTime / 1000) % 24)
+        else
+            currentHour = math.floor((os.time() * 1000 / 1000) % 24)
+        end
+
+        if lastEnvTime ~= currentHour then
+            lastEnvTime = currentHour
+            -- If we have real weather, force it
+            if envDetector and isRaining ~= nil and isThundering ~= nil then
+                -- Set weather to match real world
+                if isThundering then
+                    commands.exec("weather thunder 1000")
+                    print("[WEATHER] Forced thunder (real world)")
+                elseif isRaining then
+                    commands.exec("weather rain 1000")
+                    print("[WEATHER] Forced rain (real world)")
+                else
+                    commands.exec("weather clear 1000")
+                    print("[WEATHER] Forced clear (real world)")
+                end
+            else
+                -- Fallback: use forecast
+                local currentTick = os.time() * 1000
+                local gameDay = os.day()
+                local result = forecast.applyWeather(currentTick, gameDay)
+                if result and result.changed then
+                    print("[WEATHER] Changed: " .. (result.command or ""))
+                end
+            end
+        end
+        sleep(1)
     end
 end
 
