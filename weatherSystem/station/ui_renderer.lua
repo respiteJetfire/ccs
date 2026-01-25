@@ -1,11 +1,14 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.2 - Improved fluffy cloud icons
-local version = "6.3.2"
+-- UI Renderer v6.3.3 - Configurable background color
+local version = "6.3.3"
 
 local renderer = {}
 
 -- Assets module - must be set via init()
 local assets = nil
+
+-- Config module - for background color
+local config = nil
 
 -- Monitor reference
 local monitor = nil
@@ -17,9 +20,10 @@ local isLargeDisplay = false  -- Width >= 60 and height >= 25
 local isXLDisplay = false     -- Width >= 80 and height >= 30
 
 -- Initialize renderer with assets reference
-function renderer.init(mon, assetsModule)
+function renderer.init(mon, assetsModule, configModule)
     monitor = mon or term
     assets = assetsModule
+    config = configModule
     if monitor.getSize then
         monitorWidth, monitorHeight = monitor.getSize()
     end
@@ -29,12 +33,24 @@ function renderer.init(mon, assetsModule)
     return true
 end
 
--- Clear screen
+-- Clear screen with configured background color
 function renderer.clear(bgColor)
+    -- Use configured background color if available
+    if not bgColor and config and config.DISPLAY and config.DISPLAY.BACKGROUND_COLOR then
+        bgColor = config.DISPLAY.BACKGROUND_COLOR
+    end
     bgColor = bgColor or assets.colors.background
     monitor.setBackgroundColor(bgColor)
     monitor.clear()
     monitor.setCursorPos(1, 1)
+end
+
+-- Get configured background color
+local function getBackgroundColor()
+    if config and config.DISPLAY and config.DISPLAY.BACKGROUND_COLOR then
+        return config.DISPLAY.BACKGROUND_COLOR
+    end
+    return assets.colors.background
 end
 
 -- Draw text at position
@@ -42,7 +58,11 @@ function renderer.drawText(x, y, text, fgColor, bgColor)
     if y < 1 or y > monitorHeight then return end
     monitor.setCursorPos(x, y)
     if fgColor then monitor.setTextColor(fgColor) end
-    if bgColor then monitor.setBackgroundColor(bgColor) end
+    if bgColor then 
+        monitor.setBackgroundColor(bgColor) 
+    else
+        monitor.setBackgroundColor(getBackgroundColor())
+    end
     monitor.write(text)
 end
 
@@ -56,7 +76,7 @@ end
 function renderer.drawLine(y, char, fgColor, bgColor)
     char = char or "-"
     local line = string.rep(char, monitorWidth)
-    renderer.drawText(1, y, line, fgColor or assets.colors.textSecondary, bgColor or assets.colors.background)
+    renderer.drawText(1, y, line, fgColor or assets.colors.textSecondary, bgColor or getBackgroundColor())
 end
 
 -- Draw box

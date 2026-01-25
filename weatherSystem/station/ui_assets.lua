@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_assets.lua
--- UI Assets v6.3.2 - Improved cloud icons with fluffy multi-cloud design
-local version = "6.3.2"
+-- UI Assets v6.3.3 - Configurable background color
+local version = "6.3.3"
 
 local assets = {}
 

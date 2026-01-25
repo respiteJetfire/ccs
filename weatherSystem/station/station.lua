@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.3.2 - Improved fluffy cloud icons
+-- Weather Station v6.3.3 - Configurable background color with interactive setup
 -- Master handles all forecasting - station registers and displays
-local version = "6.3.2"
+local version = "6.3.3"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -48,7 +48,7 @@ if monitor then
     print("[INFO] Monitor found - weather display enabled")
     assets = dofile("weatherSystem/station/ui_assets.lua")
     renderer = dofile("weatherSystem/station/ui_renderer.lua")
-    renderer.init(monitor, assets)  -- Pass assets so animations work
+    renderer.init(monitor, assets, config)  -- Pass config for background color
 else
     print("[INFO] No monitor - headless mode")
 end
