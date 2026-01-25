@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
 -- UI Renderer v6.3.9 - Improved XL cloud designs
-local version = "7.0.0"
+local version = "7.1.0"
 
 local renderer = {}
 
@@ -262,42 +262,91 @@ function renderer.drawMobRadarPage(mobData)
         return
     end
 
-    local total = mobData.total or 0
+    local range = mobData.range or 24
+    if range < 1 then range = 24 end
+
     local hostiles = mobData.hostiles or 0
-    local range = mobData.range or 0
-    local ageSec = 0
-    if mobData.timestamp then
-        ageSec = math.floor((os.epoch("utc") - mobData.timestamp) / 1000)
+    local total = mobData.total or 0
+    
+    -- Draw stats
+    local statStr = string.format("Mob:%d Hostile:%d Rng:%d", total, hostiles, range)
+    if #statStr < monitorWidth - 12 then
+        renderer.drawText(monitorWidth - #statStr, 3, statStr, adaptiveColors.textSecondary, bgColor)
     end
 
-    renderer.drawText(2, 5, "Hostiles: " .. tostring(hostiles) .. " / " .. tostring(total),
-        hostiles > 0 and colors.red or adaptiveColors.textSecondary, bgColor)
-    renderer.drawText(2, 6, "Range: " .. tostring(range) .. "  Last: " .. tostring(ageSec) .. "s",
-        adaptiveColors.textSecondary, bgColor)
+    -- Define plotting area
+    local topY = 5
+    local bottomY = monitorHeight - 1
+    local availH = bottomY - topY + 1
+    local availW = monitorWidth - 2
+    
+    if availH < 5 then 
+         renderer.drawCenteredText(topY, "Screen too small", colors.red)
+         return 
+    end
 
-    local y = 8
-    local maxRows = monitorHeight - y - 1
+    local centerX = math.floor(monitorWidth / 2) + 1
+    local centerY = math.floor(topY + (availH / 2))
+
+    -- Aspect Ratio Correction: Characters are ~6x9 pixels (2:3)
+    -- To draw a circular range, X scale needs to be ~1.5x larger than Y scale
+    local charAspect = 1.5
+    
+    -- Calculate scale (chars per block)
+    local scaleY = availH / (range * 2) 
+    local scaleX_equiv = availW / (range * 2 * charAspect)
+    local scale = math.min(scaleY, scaleX_equiv) * 0.9 -- 0.9 margin
+
+    -- Draw Axis / Crosshair
+    renderer.drawText(centerX, centerY, "+", adaptiveColors.textSecondary, bgColor)
+    
+    -- Draw bounds markers
+    local rangeY = math.floor(range * scale)
+    local rangeX = math.floor(range * scale * charAspect)
+    
+    -- Range indicators (N/S/E/W)
+    if centerY - rangeY >= topY then renderer.drawText(centerX, centerY - rangeY, "^", adaptiveColors.textSecondary, bgColor) end
+    if centerY + rangeY <= bottomY then renderer.drawText(centerX, centerY + rangeY, "v", adaptiveColors.textSecondary, bgColor) end
+    if centerX + rangeX <= monitorWidth then renderer.drawText(centerX + rangeX, centerY, ">", adaptiveColors.textSecondary, bgColor) end
+    if centerX - rangeX >= 1 then renderer.drawText(centerX - rangeX, centerY, "<", adaptiveColors.textSecondary, bgColor) end
+
     local mobs = mobData.mobs or {}
-
-    if #mobs == 0 then
-        renderer.drawCenteredText(11, "No mobs detected", colors.lime)
-        return
+    
+    -- Separate to draw hostiles last (on top)
+    local neutrals = {}
+    local hostilesList = {}
+    
+    for _, mob in ipairs(mobs) do
+        if mob.hostile then
+            table.insert(hostilesList, mob)
+        else
+            table.insert(neutrals, mob)
+        end
     end
-
-    for i = 1, math.min(#mobs, maxRows) do
-        local mob = mobs[i]
-        local name = trimName(mob.name or "Mob", 18)
-        local dist = mob.distance and (tostring(mob.distance) .. "m") or "?m"
-        local dir = getDirection(mob.dx, mob.dz)
-        local marker = mob.hostile and "!" or ""
-        local color = mob.hostile and colors.red or adaptiveColors.textPrimary
-        renderer.drawText(2, y, string.format("%s %s %s%s", name, dist, dir, marker), color, bgColor)
-        y = y + 1
+    
+    local function drawMobList(list)
+        for _, mob in ipairs(list) do
+            if mob.dx and mob.dz then
+                local offY = math.floor(mob.dz * scale)
+                local offX = math.floor(mob.dx * scale * charAspect)
+                
+                local scrX = centerX + offX
+                local scrY = centerY + offY
+                
+                if scrX >= 1 and scrX <= monitorWidth and scrY >= topY and scrY <= bottomY then
+                    -- Don't overwrite center unless necessary
+                    if scrX ~= centerX or scrY ~= centerY then
+                        local char = mob.hostile and "X" or "*"
+                        local color = mob.hostile and colors.red or colors.lime
+                        renderer.drawText(scrX, scrY, char, color, bgColor)
+                    end
+                end
+            end
+        end
     end
-
-    if #mobs > maxRows then
-        renderer.drawText(2, monitorHeight - 1, "+" .. tostring(#mobs - maxRows) .. " more...", adaptiveColors.textSecondary, bgColor)
-    end
+    
+    drawMobList(neutrals)
+    drawMobList(hostilesList)
 end
 
 -- Initialize renderer with assets reference
