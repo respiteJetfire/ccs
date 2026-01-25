@@ -10,6 +10,13 @@ print("[INFO] Check interval: " .. tostring(CHECK_INTERVAL) .. "s")
 print("[INFO] Mob detection range: " .. tostring(MOB_DETECTION_RANGE) .. " blocks")
 print("[INFO] Minimum power: " .. tostring(MIN_POWER_PERCENT) .. "%")
 
+-- CONFIGURE THESE SIDES TO MATCH YOUR WIRING
+local PROJECTOR_SIDE = "front"      -- Side for forcefield/projector redstone
+local POWER_SIDE = "right"           -- Side for capacitor/deriver redstone
+
+print("[INFO] Projector redstone side: " .. PROJECTOR_SIDE)
+print("[INFO] Power device redstone side: " .. POWER_SIDE)
+
 -- Find and open wireless modem for receiving energy data
 print("[INFO] Searching for wireless modem...")
 local wirelessModemSide = nil
@@ -139,20 +146,7 @@ end
 -- Function to manage power devices (capacitor, deriver)
 local function managePowerDevices(powerPercent)
     local shouldBeOn = powerPercent >= MIN_POWER_PERCENT
-    
-    for _, device in ipairs(mffsPowerDevices) do
-        local success, err = pcall(function()
-            if device.peripheral.setRedstoneOutput then
-                device.peripheral.setRedstoneOutput(shouldBeOn)
-            elseif device.peripheral.setActive then
-                device.peripheral.setActive(shouldBeOn)
-            end
-        end)
-        
-        if not success then
-            print("[WARN] Failed to manage power device " .. device.name .. ": " .. tostring(err))
-        end
-    end
+    redstone.setOutput(POWER_SIDE, shouldBeOn)
 end
 
 -- Function to activate MFFS projectors
@@ -162,24 +156,7 @@ local function activateDefenses(reason)
     end
     
     print("[DEFENSE] Activating projectors - Reason: " .. reason)
-    
-    for _, device in ipairs(mffsProjectors) do
-        -- Activate redstone output if the device supports it
-        local success, err = pcall(function()
-            if device.peripheral.setRedstoneOutput then
-                device.peripheral.setRedstoneOutput(true)
-            elseif device.peripheral.setActive then
-                device.peripheral.setActive(true)
-            end
-        end)
-        
-        if success then
-            print("[DEFENSE] Activated: " .. device.name)
-        else
-            print("[WARN] Failed to activate " .. device.name .. ": " .. tostring(err))
-        end
-    end
-    
+    redstone.setOutput(PROJECTOR_SIDE, true)
     defensesActive = true
 end
 
@@ -190,23 +167,7 @@ local function deactivateDefenses()
     end
     
     print("[DEFENSE] Deactivating projectors")
-    
-    for _, device in ipairs(mffsProjectors) do
-        local success, err = pcall(function()
-            if device.peripheral.setRedstoneOutput then
-                device.peripheral.setRedstoneOutput(false)
-            elseif device.peripheral.setActive then
-                device.peripheral.setActive(false)
-            end
-        end)
-        
-        if success then
-            print("[DEFENSE] Deactivated: " .. device.name)
-        else
-            print("[WARN] Failed to deactivate " .. device.name .. ": " .. tostring(err))
-        end
-    end
-    
+    redstone.setOutput(PROJECTOR_SIDE, false)
     defensesActive = false
 end
 
