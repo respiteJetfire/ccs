@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.3.5 - Add key press to toggle background color
+-- Weather Station v6.3.6 - Adaptive colors for light backgrounds
 -- Master handles all forecasting - station registers and displays
-local version = "6.3.5"
+local version = "6.3.6"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 

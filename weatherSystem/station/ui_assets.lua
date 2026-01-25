@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_assets.lua
--- UI Assets v6.3.5 - Color toggle support
-local version = "6.3.5"
+-- UI Assets v6.3.6 - Adaptive colors for light backgrounds
+local version = "6.3.6"
 
 local assets = {}
 
