@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
 -- Weather Station v6.3.9 - Improved XL cloud designs
 -- Master handles all forecasting - station registers and displays
-local version = "7.0.2"
+local version = "8.0.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -30,25 +30,44 @@ end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
 rednet.open(modemSide)
 
--- Find monitor (optional)
-print("[INFO] Searching for monitor...")
-local monitor = nil
+-- Find monitors (optional)
+print("[INFO] Searching for monitors...")
+local monitors = {}
 for _, name in ipairs(peripheral.getNames()) do
     if peripheral.getType(name) == "monitor" then
-        monitor = peripheral.wrap(name)
-        monitor.setTextScale(0.5)
-        break
+        local mon = peripheral.wrap(name)
+        if mon and mon.setTextScale then
+            mon.setTextScale((config.DISPLAY and config.DISPLAY.TEXT_SCALE) or 0.5)
+        end
+        table.insert(monitors, {name = name, peripheral = mon})
     end
+end
+
+local monitor = nil
+local multiMonitor = false
+if #monitors > 0 then
+    monitor = monitors[1].peripheral
+    multiMonitor = #monitors > 1
 end
 
 -- Load display modules
 local renderer = nil
+local renderers = nil
 local assets = nil
 if monitor then
-    print("[INFO] Monitor found - weather display enabled")
+    if multiMonitor then
+        print("[INFO] " .. tostring(#monitors) .. " monitors found - multi-display mode")
+    else
+        print("[INFO] Monitor found - weather display enabled")
+    end
     assets = dofile("weatherSystem/station/ui_assets.lua")
-    renderer = dofile("weatherSystem/station/ui_renderer.lua")
-    renderer.init(monitor, assets, config)  -- Pass config for background color
+    renderers = {}
+    for i, mon in ipairs(monitors) do
+        local r = dofile("weatherSystem/station/ui_renderer.lua")
+        r.init(mon.peripheral, assets, config)  -- Pass config for background color
+        renderers[i] = r
+    end
+    renderer = renderers[1]
 else
     print("[INFO] No monitor - headless mode")
 end
@@ -86,6 +105,11 @@ local currentPageIndex = 1
 local otherStationIndex = 0  -- Index for cycling through other stations
 local cachedOtherStation = nil  -- Cached other station for "other" pages
 local cachedOtherForecast = nil
+
+-- Multi-monitor page assignment
+local cycleMonitorIndex = 1
+local fixedPagesByMonitor = {}
+local cyclePages = {}
 
 -- Colony integration state
 local colonyModule = nil
@@ -251,6 +275,68 @@ local function selectNextOtherStation()
                           currentForecast.stationForecasts[stationId]
 end
 
+local function listContains(list, value)
+    for i, v in ipairs(list) do
+        if v == value then
+            return true, i
+        end
+    end
+    return false, nil
+end
+
+local function recomputePageAssignments()
+    local activePages = getActivePageList()
+    fixedPagesByMonitor = {}
+    cyclePages = {}
+
+    if not multiMonitor then
+        cyclePages = activePages
+        local ok, idx = listContains(cyclePages, currentPage)
+        if ok then
+            currentPageIndex = idx
+        else
+            currentPageIndex = 1
+            currentPage = cyclePages[1]
+        end
+        return
+    end
+
+    local pageIndex = 1
+    for i = 1, #monitors do
+        if i ~= cycleMonitorIndex then
+            local page = activePages[pageIndex] or activePages[#activePages]
+            fixedPagesByMonitor[i] = page
+            pageIndex = pageIndex + 1
+        end
+    end
+
+    for i = pageIndex, #activePages do
+        table.insert(cyclePages, activePages[i])
+    end
+
+    if #cyclePages == 0 then
+        cyclePages = {activePages[1]}
+    end
+
+    local ok, idx = listContains(cyclePages, currentPage)
+    if ok then
+        currentPageIndex = idx
+    else
+        currentPageIndex = 1
+        currentPage = cyclePages[1]
+    end
+
+    -- Ensure cached other station exists if any page needs it
+    for i = 1, #monitors do
+        local page = (i == cycleMonitorIndex) and currentPage or fixedPagesByMonitor[i]
+        if page == "other5day" or page == "othercurrent" then
+            if not cachedOtherStation then
+                selectNextOtherStation()
+            end
+        end
+    end
+end
+
 -- Get current page list based on whether we have other stations (will be redefined after colony init)
 local getActivePageList
 getActivePageList = function()
@@ -294,13 +380,15 @@ end
 
 -- Display loop
 local function displayLoop()
-    if not monitor or not renderer then return end
+    if not monitor or not renderers or not assets then return end
     
     -- Show loading
-    renderer.clear()
-    renderer.drawHeader(config.STATION_NAME, os.time(), "Loading")
-    renderer.drawCenteredText(10, "Connecting to Weather Master...", assets.colors.textHighlight)
-    renderer.drawFooter("Weather Station v" .. version)
+    for i, r in ipairs(renderers) do
+        r.clear()
+        r.drawHeader(config.STATION_NAME, os.time(), "Loading")
+        r.drawCenteredText(10, "Connecting to Weather Master...", assets.colors.textHighlight)
+        r.drawFooter("Weather Station v" .. version)
+    end
     
     while true do
         if currentForecast then
@@ -331,18 +419,30 @@ local function displayLoop()
             }
             
             -- Render page (local station for main pages, cached other station for "other" pages)
-            renderer.renderPage(displayForecast, allStations, currentPage, localIdx, cachedOtherStation, cachedOtherForecast, colonyData)
+            for i, r in ipairs(renderers) do
+                local pageForMonitor = currentPage
+                if multiMonitor then
+                    if i == cycleMonitorIndex then
+                        pageForMonitor = currentPage
+                    else
+                        pageForMonitor = fixedPagesByMonitor[i] or currentPage
+                    end
+                end
+                r.renderPage(displayForecast, allStations, pageForMonitor, localIdx, cachedOtherStation, cachedOtherForecast, colonyData)
+            end
             
             -- Advance animation frame
             assets.nextFrame()
         else
             -- Offline screen
-            renderer.clear()
-            renderer.drawHeader(config.STATION_NAME, os.time(), "Offline")
-            renderer.drawCenteredText(8, "OFFLINE", assets.colors.textWarning)
-            renderer.drawCenteredText(10, "Biome: " .. localBiomeData.biome:gsub("minecraft:", ""):gsub("_", " "), assets.colors.textSecondary)
-            renderer.drawCenteredText(12, "Waiting for master...", assets.colors.textSecondary)
-            renderer.drawFooter("No forecast data")
+            for i, r in ipairs(renderers) do
+                r.clear()
+                r.drawHeader(config.STATION_NAME, os.time(), "Offline")
+                r.drawCenteredText(8, "OFFLINE", assets.colors.textWarning)
+                r.drawCenteredText(10, "Biome: " .. localBiomeData.biome:gsub("minecraft:", ""):gsub("_", " "), assets.colors.textSecondary)
+                r.drawCenteredText(12, "Waiting for master...", assets.colors.textSecondary)
+                r.drawFooter("No forecast data")
+            end
         end
         sleep(1)  -- Faster refresh for animations
     end
@@ -357,7 +457,8 @@ local function cycleLoop()
     
     while true do
         local now = os.epoch("utc")
-        local activePages = getActivePageList()
+        recomputePageAssignments()
+        local activePages = multiMonitor and cyclePages or getActivePageList()
         
         -- Cycle pages
         if now - lastPageChange > pageTime * 1000 then
@@ -390,13 +491,13 @@ local function inputLoop()
             print("[INFO] Forecast requested")
         elseif key == keys.n or key == keys.right then
             if monitor then
-                local activePages = getActivePageList()
+                local activePages = multiMonitor and cyclePages or getActivePageList()
                 currentPageIndex = (currentPageIndex % #activePages) + 1
                 currentPage = activePages[currentPageIndex]
             end
         elseif key == keys.p or key == keys.left then
             if monitor then
-                local activePages = getActivePageList()
+                local activePages = multiMonitor and cyclePages or getActivePageList()
                 currentPageIndex = currentPageIndex - 1
                 if currentPageIndex < 1 then currentPageIndex = #activePages end
                 currentPage = activePages[currentPageIndex]
@@ -460,6 +561,10 @@ getActivePageList = function()
     end
 
     return base
+end
+
+if monitor and multiMonitor then
+    recomputePageAssignments()
 end
 
 -- Colony updater loop
