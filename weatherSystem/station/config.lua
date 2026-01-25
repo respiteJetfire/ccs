@@ -1,6 +1,6 @@
 -- weatherSystem/station/config.lua
 -- Configuration for Weather Station with Integrated Display
-local version = "7.0.0"
+local version = "7.0.1"
 
 local config = {
     -- Station identification
@@ -47,11 +47,13 @@ config.COLONY = {
     SHOW_PAGES = true,                 -- Include colony pages in rotation
 
     -- Data collection toggles
-    COLLECT_CITIZENS = true,           -- Collect citizen data
+    -- WARNING: COLLECT_CITIZENS and COLLECT_RESEARCH are DISABLED due to
+    -- Advanced Peripherals/MineColonies mod incompatibility bugs that crash the server
+    COLLECT_CITIZENS = false,          -- CRASHES SERVER - DO NOT ENABLE
     COLLECT_BUILDINGS = true,          -- Collect building data
     COLLECT_REQUESTS = true,           -- Collect request data
-    COLLECT_RESEARCH = true,           -- Collect research data
-    COLLECT_VISITORS = true,           -- Collect visitor data
+    COLLECT_RESEARCH = false,          -- CRASHES SERVER - DO NOT ENABLE
+    COLLECT_VISITORS = false,          -- Visitors may also crash - disabled for safety
 
     -- Display options
     MAX_CITIZENS_DISPLAY = 15,         -- Max citizens to show in list

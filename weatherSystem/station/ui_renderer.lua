@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
 -- UI Renderer v6.3.9 - Improved XL cloud designs
-local version = "6.4.0"
+local version = "6.5.0"
 
 local renderer = {}
 
@@ -19,12 +19,205 @@ local monitorHeight = 19
 local isLargeDisplay = false  -- Width >= 60 and height >= 25
 local isXLDisplay = false     -- Width >= 80 and height >= 30
 
--- Colony helper: render small icon from assets
+-- Forward declarations for helper functions (defined after init)
+local getBackgroundColor
+local getAdaptiveColors
+
+-- Colony helper: render small icon from assets (placeholder, uses forward refs)
 local function drawColonyIcon(x, y, iconName, fg)
     if not assets or not assets.icons or not assets.icons[iconName] then return end
     local icon = assets.icons[iconName]
+    local bgColor = getBackgroundColor and getBackgroundColor() or colors.black
     for i = 1, math.min(#icon, monitorHeight - y + 1) do
-        renderer.drawText(x, y + i - 1, icon[i], fg or assets.colors.textPrimary, getBackgroundColor())
+        renderer.drawText(x, y + i - 1, icon[i], fg or assets.colors.textPrimary, bgColor)
+    end
+end
+
+-- Colony Summary Page
+function renderer.drawColonySummaryPage(colonyData)
+    local adaptiveColors = getAdaptiveColors()
+    local bgColor = getBackgroundColor()
+    
+    if not colonyData then
+        renderer.drawCenteredText(10, "No colony data available", colors.orange)
+        return
+    end
+    
+    local summary = colonyData.summary or {}
+    local colonyName = colonyData.colonyName or "Unknown Colony"
+    
+    renderer.drawText(2, 3, "Colony: " .. colonyName, adaptiveColors.textHighlight, bgColor)
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, bgColor)
+    
+    local y = 5
+    
+    -- Citizens count
+    local citizenStr = tostring(summary.citizenCount or 0) .. "/" .. tostring(summary.maxCitizens or 0)
+    renderer.drawText(2, y, "Citizens: " .. citizenStr, adaptiveColors.textPrimary, bgColor)
+    y = y + 1
+    
+    -- Happiness
+    local happiness = summary.happiness or 0
+    local happyColor = happiness >= 8 and colors.lime or (happiness >= 5 and colors.yellow or colors.red)
+    renderer.drawText(2, y, "Happiness: " .. string.format("%.1f", happiness), happyColor, bgColor)
+    y = y + 1
+    
+    -- Status
+    local statusStr = summary.isActive and "Active" or "Inactive"
+    local statusColor = summary.isActive and colors.lime or colors.gray
+    renderer.drawText(2, y, "Status: " .. statusStr, statusColor, bgColor)
+    y = y + 1
+    
+    -- Under Attack
+    if summary.isUnderAttack then
+        renderer.drawText(2, y, "!! UNDER ATTACK !!", colors.red, bgColor)
+        y = y + 1
+    end
+    
+    -- Graves
+    if summary.gravesCount and summary.gravesCount > 0 then
+        renderer.drawText(2, y, "Graves: " .. tostring(summary.gravesCount), colors.red, bgColor)
+        y = y + 1
+    end
+    
+    -- Construction sites
+    if summary.constructionSites and summary.constructionSites > 0 then
+        renderer.drawText(2, y, "Construction: " .. tostring(summary.constructionSites), colors.orange, bgColor)
+        y = y + 1
+    end
+    
+    -- Buildings count
+    if colonyData.buildings then
+        renderer.drawText(2, y + 1, "Buildings: " .. tostring(#colonyData.buildings), adaptiveColors.textSecondary, bgColor)
+    end
+    
+    -- Requests count
+    if colonyData.requests and colonyData.requests.count then
+        renderer.drawText(2, y + 2, "Open Requests: " .. tostring(colonyData.requests.count), adaptiveColors.textSecondary, bgColor)
+    end
+end
+
+-- Colony Citizens Page (currently disabled due to API bug)
+function renderer.drawColonyCitizensPage(colonyData)
+    local adaptiveColors = getAdaptiveColors()
+    local bgColor = getBackgroundColor()
+    
+    renderer.drawText(2, 3, "Colony Citizens", adaptiveColors.textHighlight, bgColor)
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, bgColor)
+    
+    -- Citizens data is disabled due to server crash bug
+    renderer.drawCenteredText(8, "Citizens list unavailable", colors.orange)
+    renderer.drawCenteredText(10, "(API temporarily disabled)", adaptiveColors.textSecondary)
+    
+    -- Show count from summary if available
+    if colonyData and colonyData.summary then
+        local citizenStr = tostring(colonyData.summary.citizenCount or 0) .. "/" .. tostring(colonyData.summary.maxCitizens or 0)
+        renderer.drawCenteredText(12, "Population: " .. citizenStr, adaptiveColors.textPrimary)
+    end
+end
+
+-- Colony Buildings Page
+function renderer.drawColonyBuildingsPage(colonyData)
+    local adaptiveColors = getAdaptiveColors()
+    local bgColor = getBackgroundColor()
+    
+    renderer.drawText(2, 3, "Colony Buildings", adaptiveColors.textHighlight, bgColor)
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, bgColor)
+    
+    if not colonyData or not colonyData.buildings or #colonyData.buildings == 0 then
+        renderer.drawCenteredText(10, "No building data", colors.orange)
+        return
+    end
+    
+    local buildings = colonyData.buildings
+    local y = 5
+    local maxDisplay = math.min(#buildings, monitorHeight - 7)
+    
+    -- Column headers
+    renderer.drawText(2, y, "Building", adaptiveColors.textSecondary, bgColor)
+    renderer.drawText(25, y, "Lvl", adaptiveColors.textSecondary, bgColor)
+    renderer.drawText(30, y, "Status", adaptiveColors.textSecondary, bgColor)
+    y = y + 1
+    
+    for i = 1, maxDisplay do
+        local building = buildings[i]
+        if building then
+            -- Building name
+            local name = building.name or building.type or "Unknown"
+            if #name > 20 then name = name:sub(1, 18) .. ".." end
+            renderer.drawText(2, y, name, adaptiveColors.textPrimary, bgColor)
+            
+            -- Level
+            local level = tostring(building.level or 0) .. "/" .. tostring(building.maxLevel or 5)
+            renderer.drawText(25, y, level, adaptiveColors.textSecondary, bgColor)
+            
+            -- Status
+            local status = building.built and "Built" or "Building"
+            local statusColor = building.built and colors.lime or colors.orange
+            if building.isWorkingOn then
+                status = "Working"
+                statusColor = colors.yellow
+            end
+            renderer.drawText(30, y, status, statusColor, bgColor)
+            
+            y = y + 1
+        end
+    end
+    
+    if #buildings > maxDisplay then
+        renderer.drawText(2, monitorHeight - 2, "+" .. tostring(#buildings - maxDisplay) .. " more...", adaptiveColors.textSecondary, bgColor)
+    end
+end
+
+-- Colony Requests Page
+function renderer.drawColonyRequestsPage(colonyData)
+    local adaptiveColors = getAdaptiveColors()
+    local bgColor = getBackgroundColor()
+    
+    renderer.drawText(2, 3, "Colony Requests", adaptiveColors.textHighlight, bgColor)
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, bgColor)
+    
+    if not colonyData or not colonyData.requests or not colonyData.requests.items or #colonyData.requests.items == 0 then
+        renderer.drawCenteredText(10, "No open requests", colors.lime)
+        return
+    end
+    
+    local requests = colonyData.requests.items
+    local totalCount = colonyData.requests.count or #requests
+    local y = 5
+    local maxDisplay = math.min(#requests, monitorHeight - 7)
+    
+    renderer.drawText(2, y, "Total: " .. tostring(totalCount) .. " request(s)", adaptiveColors.textSecondary, bgColor)
+    y = y + 1
+    
+    for i = 1, maxDisplay do
+        local req = requests[i]
+        if req then
+            -- Request name/item
+            local name = req.name or req.desc or "Unknown request"
+            if #name > 35 then name = name:sub(1, 33) .. ".." end
+            renderer.drawText(2, y, name, adaptiveColors.textPrimary, bgColor)
+            
+            -- Count if available
+            if req.count then
+                local countStr = "x" .. tostring(req.count)
+                renderer.drawText(40, y, countStr, colors.yellow, bgColor)
+            end
+            
+            -- Target (who requested)
+            if req.target then
+                y = y + 1
+                local targetStr = "  -> " .. tostring(req.target)
+                if #targetStr > 40 then targetStr = targetStr:sub(1, 38) .. ".." end
+                renderer.drawText(2, y, targetStr, adaptiveColors.textSecondary, bgColor)
+            end
+            
+            y = y + 1
+        end
+    end
+    
+    if totalCount > maxDisplay then
+        renderer.drawText(2, monitorHeight - 2, "+" .. tostring(totalCount - maxDisplay) .. " more requests...", adaptiveColors.textSecondary, bgColor)
     end
 end
 
@@ -67,8 +260,8 @@ function renderer.clear(bgColor)
     monitor.setCursorPos(1, 1)
 end
 
--- Get configured background color
-local function getBackgroundColor()
+-- Get configured background color (assigns to forward-declared variable)
+getBackgroundColor = function()
     if config and config.DISPLAY and config.DISPLAY.BACKGROUND_COLOR then
         return config.DISPLAY.BACKGROUND_COLOR
     end
@@ -91,8 +284,8 @@ local function isLightColor(color)
     return lightColors[color] or false
 end
 
--- Get adaptive colors based on background
-local function getAdaptiveColors()
+-- Get adaptive colors based on background (assigns to forward-declared variable)
+getAdaptiveColors = function()
     local bgColor = getBackgroundColor()
     local isLight = isLightColor(bgColor)
     
