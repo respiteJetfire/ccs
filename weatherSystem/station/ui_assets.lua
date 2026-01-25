@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_assets.lua
--- UI Assets v6.3.7 - Fix icon backgrounds
-local version = "6.3.7"
+-- UI Assets v6.3.8 - Add thunderstorm icon mappings
+local version = "6.3.8"
 
 local assets = {}
 
@@ -396,6 +396,9 @@ assets.largeIcons = {
     }
 }
 
+-- Map thunderstorm to use thunder icons
+assets.animatedLargeIcons.thunderstorm = assets.animatedLargeIcons.thunder
+
 -- Extra-large animated icons (9x9) for big displays
 assets.animatedXLIcons = {
     clear = {
@@ -675,6 +678,9 @@ assets.animatedXLIcons = {
         }
     }
 }
+
+-- Map thunderstorm to use thunder icons
+assets.animatedXLIcons.thunderstorm = assets.animatedXLIcons.thunder
 
 -- Weather descriptions
 assets.descriptions = {

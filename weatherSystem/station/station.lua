@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.3.7 - Fix icon backgrounds and XL icon cutoff
+-- Weather Station v6.3.8 - Fix XL icon backgrounds and add thunderstorm icons
 -- Master handles all forecasting - station registers and displays
-local version = "6.3.7"
+local version = "6.3.8"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 

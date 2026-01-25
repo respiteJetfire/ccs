@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.7 - Fix icon backgrounds to use configured color and prevent XL icon cutoff
-local version = "6.3.7"
+-- UI Renderer v6.3.8 - Fix XL icon black backgrounds
+local version = "6.3.8"
 
 local renderer = {}
 
@@ -168,7 +168,7 @@ function renderer.drawLargeIcon(x, y, state, color)
     
     for i, line in ipairs(icon) do
         if y + i - 1 <= monitorHeight then
-            renderer.drawText(x, y + i - 1, line, color, assets.colors.background)
+            renderer.drawText(x, y + i - 1, line, color, getBackgroundColor())
         end
     end
 end
