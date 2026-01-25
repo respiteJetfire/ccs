@@ -1,6 +1,6 @@
 -- CC script to automatically monitor energy storage and broadcast via rednet
 -- Monitors Mekanism energy cubes and other energy storage peripherals
-local version = "0.1.0"
+local version = "0.2.0"
 local CHECK_INTERVAL = 5  -- seconds between broadcasts
 
 print("[INFO] Energy Master v" .. version .. " starting...")
