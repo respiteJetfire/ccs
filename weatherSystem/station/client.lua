@@ -1,7 +1,7 @@
 -- weatherSystem/station/client.lua
--- Weather Client v1.0.0 - Display-only, no registration
+-- Weather Client v1.1.0 - Display-only, no registration
 -- Shows weather forecasts from other stations without registering as a station
-local version = "1.0.1"
+local version = "1.1.0"
 
 print("[INFO] Weather Client v" .. version .. " starting...")
 
@@ -13,9 +13,6 @@ local config = {
         PAGE_CYCLE_TIME = 8,
         TEXT_SCALE = 0.5,
         BACKGROUND_COLOR = colors.black
-    },
-    COLONY = {
-        ENABLED = false  -- Colony integration disabled for client
     }
 }
 
@@ -97,43 +94,53 @@ end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
 rednet.open(modemSide)
 
--- Find monitor (optional but expected)
+-- Find monitor (required for client)
 print("[INFO] Searching for monitor...")
 local monitor = nil
 for _, name in ipairs(peripheral.getNames()) do
     if peripheral.getType(name) == "monitor" then
         monitor = peripheral.wrap(name)
-        monitor.setTextScale(0.5)
+        monitor.setTextScale(config.DISPLAY.TEXT_SCALE)
+        print("[INFO] Monitor found: " .. name)
         break
     end
 end
 
--- Load display modules
-local renderer = nil
-local assets = nil
-if monitor then
-    print("[INFO] Monitor found - weather display enabled")
-    assets = dofile("weatherSystem/station/ui_assets.lua")
-    renderer = dofile("weatherSystem/station/ui_renderer.lua")
-    renderer.init(monitor, assets, config)
-else
-    print("[INFO] No monitor - console output only")
+if not monitor then
+    error("[ERROR] No monitor found! Client requires a monitor.")
 end
+
+-- Load display modules
+print("[INFO] Loading UI modules...")
+local assets = dofile("weatherSystem/station/ui_assets.lua")
+local renderer = dofile("weatherSystem/station/ui_renderer.lua")
+renderer.init(monitor, assets, config)
+print("[INFO] UI modules loaded")
 
 -- State
 local currentForecast = nil
 local allStations = {}
 local lastUpdate = 0
+local lastRequest = 0
 
 -- Display state
 local currentPage = "current"
-local pageList = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
 local currentPageIndex = 1
 local currentStationIndex = 1  -- Which station we're viewing
 local cachedStation = nil
 local cachedStationForecast = nil
 
--- No colony integration for client (keep it simple)
+-- Request forecast from master
+local function requestForecast()
+    local packet = {
+        type = "forecast_request",
+        station = { id = os.getComputerID() },
+        timestamp = os.epoch("utc")
+    }
+    rednet.broadcast(packet, STATION_PROTOCOL)
+    lastRequest = os.epoch("utc")
+    print("[REQ] Forecast requested")
+end
 
 -- Process received forecast
 local function processForecast(data)
@@ -156,25 +163,19 @@ local function processForecast(data)
         -- Update station list
         if data.stations and #data.stations > 0 then
             allStations = data.stations
+            -- Initialize cached station if needed
+            if not cachedStation and #allStations > 0 then
+                currentStationIndex = 1
+                cachedStation = allStations[1]
+                local stationId = tostring(cachedStation.id)
+                cachedStationForecast = currentForecast.stationForecasts[stationId]
+            end
         end
         
         lastUpdate = os.epoch("utc")
         return true
     end
     return false
-end
-
--- Get current viewing station (cycles through all stations)
-local function getCurrentStation()
-    if #allStations == 0 then
-        return nil, 0
-    end
-    
-    if currentStationIndex > #allStations then
-        currentStationIndex = 1
-    end
-    
-    return allStations[currentStationIndex], currentStationIndex
 end
 
 -- Select next station and cache it
@@ -216,20 +217,23 @@ local function updateCachedStation()
 end
 
 -- Get active page list based on station count
-local getActivePageList
-getActivePageList = function()
+local function getActivePageList()
     if #allStations > 1 then
-      function getActivePageList
+        return {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+    else
         return {"current", "hourly", "fiveday", "overview"}
     end
 end
 
--- Receive loop - passive listening only (NO registration, NO heartbeats)
+-- Receive loop - listens for forecasts and requests them periodically
 local function receiveLoop()
-    print("[INFO] Listening for weather broadcasts (no registration)...")
+    print("[INFO] Listening for weather forecasts...")
+    
+    -- Request initial forecast
+    requestForecast()
     
     while true do
-        local senderId, message = rednet.receive(nil, 30)
+        local senderId, message = rednet.receive(STATION_PROTOCOL, 5)
         if senderId and message then
             local packet = message
             if type(message) == "string" then
@@ -243,18 +247,22 @@ local function receiveLoop()
                 end
             end
         end
+        
+        -- Request forecast every 30 seconds if we don't have data
+        local now = os.epoch("utc")
+        if not currentForecast or (now - lastRequest) > 30000 then
+            requestForecast()
+        end
     end
 end
 
 -- Display loop
 local function displayLoop()
-    if not monitor or not renderer then return end
-    
     -- Show loading
     renderer.clear()
-    renderer.drawHeader(config.STATION_NAME .. " (Client)", os.time(), "Loading")
-    renderer.drawCenteredText(10, "Listening for Weather Broadcasts...", assets.colors.textHighlight)
-    renderer.drawCenteredText(12, "(No station registration)", assets.colors.textSecondary)
+    renderer.drawHeader(config.STATION_NAME, os.time(), "Loading")
+    renderer.drawCenteredText(10, "Requesting Weather Data...", assets.colors.textHighlight)
+    renderer.drawCenteredText(12, "(Client mode - no registration)", assets.colors.textSecondary)
     renderer.drawFooter("Weather Client v" .. version)
     
     while true do
@@ -284,26 +292,26 @@ local function displayLoop()
             }
             
             -- Render page - use cached station for all pages (client views other stations)
-            renderer.renderPage(displayForecast, allStations, currentPage, currentStationIndex, cachedStation, cachedStationForecast, colonyData)
+            renderer.renderPage(displayForecast, allStations, currentPage, currentStationIndex, cachedStation, cachedStationForecast, nil)
             
             -- Advance animation frame
             assets.nextFrame()
-        elseif currentForecast thennil
+        elseif currentForecast then
             -- Have forecast but no station selected yet
             updateCachedStation()
             
             renderer.clear()
-            renderer.drawHeader(config.STATION_NAME .. " (Client)", os.time(), "Waiting")
-            renderer.drawCenteredText(10, "Forecast received, waiting for stations...", assets.colors.textHighlight)
+            renderer.drawHeader(config.STATION_NAME, os.time(), "Waiting")
+            renderer.drawCenteredText(10, "Forecast received, initializing...", assets.colors.textHighlight)
             renderer.drawCenteredText(12, "Stations: " .. #allStations, assets.colors.textSecondary)
             renderer.drawFooter("Weather Client v" .. version)
         else
             -- Offline screen
             renderer.clear()
-            renderer.drawHeader(config.STATION_NAME .. " (Client)", os.time(), "Offline")
-            renderer.drawCenteredText(8, "OFFLINE", assets.colors.textWarning)
-            renderer.drawCenteredText(10, "Listening for broadcasts...", assets.colors.textSecondary)
-            renderer.drawCenteredText(12, "(No registration required)", assets.colors.textSecondary)
+            renderer.drawHeader(config.STATION_NAME, os.time(), "Offline")
+            renderer.drawCenteredText(8, "WAITING FOR DATA", assets.colors.textWarning)
+            renderer.drawCenteredText(10, "Requesting forecast...", assets.colors.textSecondary)
+            renderer.drawCenteredText(12, "(Client mode - no registration)", assets.colors.textSecondary)
             renderer.drawFooter("No forecast data")
         end
         sleep(1)
@@ -312,8 +320,6 @@ end
 
 -- Page and station cycling loop
 local function cycleLoop()
-    if not monitor then return end
-    
     local pageTime = 8  -- Seconds per page
     local lastPageChange = os.epoch("utc")
     
@@ -327,29 +333,15 @@ local function cycleLoop()
             if currentPageIndex > #activePages then
                 currentPageIndex = 1
                 -- Also cycle to next station when wrapping pages
-                selectNextStation()
+                if #allStations > 1 then
+                    selectNextStation()
+                end
             end
             currentPage = activePages[currentPageIndex]
             lastPageChange = now
         end
         
         sleep(1)
-    end
-end
-
--- Status loop (console output when no monitor)
-local function statusLoop()
-    while true do
-        sleep(60)
-        if currentForecast then
-            local stationName = cachedStation and cachedStation.name or "None"
-            print("[STATUS] " .. (currentForecast.season or "?") .. 
-                  " | " .. (currentForecast.current and currentForecast.current.state or "?") ..
-                  " | Viewing: " .. stationName ..
-                  " | " .. #allStations .. " stations")
-        else
-            print("[STATUS] No forecast data - waiting for broadcast...")
-        end
     end
 end
 
@@ -361,42 +353,37 @@ local function inputLoop()
             print("[INFO] Shutting down...")
             return
         elseif key == keys.n or key == keys.right then
-            if monitor then
-                local activePages = getActivePageList()
-                currentPageIndex = (currentPageIndex % #activePages) + 1
-                currentPage = activePages[currentPageIndex]
-            end
+            local activePages = getActivePageList()
+            currentPageIndex = (currentPageIndex % #activePages) + 1
+            currentPage = activePages[currentPageIndex]
+            print("[INFO] Page: " .. currentPage)
         elseif key == keys.p or key == keys.left then
-            if monitor then
-                local activePages = getActivePageList()
-                currentPageIndex = currentPageIndex - 1
-                if currentPageIndex < 1 then currentPageIndex = #activePages end
-                currentPage = activePages[currentPageIndex]
-            end
+            local activePages = getActivePageList()
+            currentPageIndex = currentPageIndex - 1
+            if currentPageIndex < 1 then currentPageIndex = #activePages end
+            currentPage = activePages[currentPageIndex]
+            print("[INFO] Page: " .. currentPage)
         elseif key == keys.s then
             -- Cycle to next station
             selectNextStation()
             print("[INFO] Viewing station: " .. (cachedStation and cachedStation.name or "None"))
         elseif key == keys.c then
-            if monitor then
-                local colorName = config.nextBackgroundColor()
-                print("[INFO] Background color: " .. colorName)
-            end
+            local colorName = config.nextBackgroundColor()
+            print("[INFO] Background color: " .. colorName)
+        elseif key == keys.r then
+            -- Manual refresh
+            requestForecast()
         end
     end
 end
 
 -- Main
 print("[INFO] Weather Client running...")
-print("[INFO] Keys: Q=quit, N/P=page, S=station, C=color")
-print("[INFO] Passive mode - no registration with master")
+print("[INFO] Keys: Q=quit, R=refresh, N/P=page, S=station, C=color")
+print("[INFO] Client mode - requests data but no registration")
 
--- Initialize colony integration if enabled (optional for client)
-if monitor then
-    parallel.waitForAny(receiveLoop, displayLoop, cycleLoop, inputLoop)
-else
-    parallel.waitForAny(receiveLoop, statusLoop, input
+parallel.waitForAny(receiveLoop, displayLoop, cycleLoop, inputLoop)
 
 rednet.close(modemSide)
-if monitor and renderer then renderer.clear() end
+if renderer then renderer.clear() end
 print("[INFO] Weather Client stopped")
