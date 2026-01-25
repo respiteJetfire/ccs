@@ -34,18 +34,27 @@ print("[INFO] Searching for energy storage peripherals...")
 local energyDevices = {}
 for _, name in ipairs(peripheral.getNames()) do
     local pType = peripheral.getType(name)
+    print("[DEBUG] Found peripheral: " .. name .. " (Type: " .. pType .. ")")
+    
     -- Check for Mekanism energy cubes and other energy storage devices
-    if pType:find("energyCube") or pType:find("energy_cube") or pType:find("induction_matrix") then
+    -- Try case-insensitive matching
+    local pTypeLower = pType:lower()
+    if pTypeLower:find("energycube") or pTypeLower:find("energy_cube") or pTypeLower:find("induction_matrix") or pTypeLower:find("eliteenergycube") then
         local device = peripheral.wrap(name)
+        -- Check if it has energy methods
         if device.getEnergy and device.getMaxEnergy then
             table.insert(energyDevices, {name = name, type = pType, peripheral = device})
-            print("[INFO] Found: " .. name .. " (" .. pType .. ")")
+            print("[INFO] Added energy device: " .. name .. " (" .. pType .. ")")
+        else
+            print("[WARN] Device " .. name .. " matched but lacks getEnergy/getMaxEnergy methods")
         end
     end
 end
 
 if #energyDevices == 0 then
-    error("[ERROR] No energy storage peripherals found! Please attach energy cubes.")
+    print("[ERROR] No energy storage peripherals found! Please attach energy cubes.")
+    print("[ERROR] Check the debug output above for available peripherals.")
+    error("No energy devices detected")
 end
 print("[INFO] Total energy devices found: " .. tostring(#energyDevices))
 
