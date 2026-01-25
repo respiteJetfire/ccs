@@ -1,13 +1,81 @@
 -- weatherSystem/station/client.lua
 -- Weather Client v1.0.0 - Display-only, no registration
 -- Shows weather forecasts from other stations without registering as a station
-local version = "1.0.0"
+local version = "1.0.1"
 
 print("[INFO] Weather Client v" .. version .. " starting...")
 
--- Load config
-local config = dofile("weatherSystem/station/config.lua")
-config.load()
+-- Minimal config for client (no station registration needed)
+local config = {
+    STATION_NAME = "Weather Client",
+    DISPLAY = {
+        REFRESH_INTERVAL = 5,
+        PAGE_CYCLE_TIME = 8,
+        TEXT_SCALE = 0.5,
+        BACKGROUND_COLOR = colors.black
+    },
+    COLONY = {
+        ENABLED = false  -- Colony integration disabled for client
+    }
+}
+
+-- Load saved display preferences if they exist
+if fs.exists("weatherSystem/station/client_config.json") then
+    local file = fs.open("weatherSystem/station/client_config.json", "r")
+    if file then
+        local data = file.readAll()
+        file.close()
+        local loaded = textutils.unserialiseJSON(data)
+        if loaded then
+            if loaded.STATION_NAME then config.STATION_NAME = loaded.STATION_NAME end
+            if loaded.DISPLAY then
+                for k, v in pairs(loaded.DISPLAY) do
+                    config.DISPLAY[k] = v
+                end
+            end
+        end
+    end
+end
+
+-- Save config helper
+local function saveConfig()
+    local file = fs.open("weatherSystem/station/client_config.json", "w")
+    if file then
+        file.write(textutils.serialiseJSON({
+            STATION_NAME = config.STATION_NAME,
+            DISPLAY = config.DISPLAY
+        }))
+        file.close()
+    end
+end
+
+-- Color presets for cycling
+local colorPresets = {
+    {name = "Black", color = colors.black},
+    {name = "Gray", color = colors.gray},
+    {name = "Light Gray", color = colors.lightGray},
+    {name = "Red", color = colors.red},
+    {name = "Blue", color = colors.blue},
+    {name = "Green", color = colors.green},
+    {name = "Cyan", color = colors.cyan},
+    {name = "Orange", color = colors.orange},
+    {name = "Purple", color = colors.purple}
+}
+
+config.nextBackgroundColor = function()
+    local currentIndex = 1
+    for i, preset in ipairs(colorPresets) do
+        if preset.color == config.DISPLAY.BACKGROUND_COLOR then
+            currentIndex = i
+            break
+        end
+    end
+    currentIndex = currentIndex + 1
+    if currentIndex > #colorPresets then currentIndex = 1 end
+    config.DISPLAY.BACKGROUND_COLOR = colorPresets[currentIndex].color
+    saveConfig()
+    return colorPresets[currentIndex].name
+end
 
 print("[INFO] Client Name: " .. config.STATION_NAME)
 
@@ -65,10 +133,7 @@ local currentStationIndex = 1  -- Which station we're viewing
 local cachedStation = nil
 local cachedStationForecast = nil
 
--- Colony integration state (optional)
-local colonyModule = nil
-local colonyData = nil
-local colonyAvailable = false
+-- No colony integration for client (keep it simple)
 
 -- Process received forecast
 local function processForecast(data)
@@ -154,8 +219,7 @@ end
 local getActivePageList
 getActivePageList = function()
     if #allStations > 1 then
-        return {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
-    else
+      function getActivePageList
         return {"current", "hourly", "fiveday", "overview"}
     end
 end
@@ -224,7 +288,7 @@ local function displayLoop()
             
             -- Advance animation frame
             assets.nextFrame()
-        elseif currentForecast then
+        elseif currentForecast thennil
             -- Have forecast but no station selected yet
             updateCachedStation()
             
@@ -328,71 +392,10 @@ print("[INFO] Keys: Q=quit, N/P=page, S=station, C=color")
 print("[INFO] Passive mode - no registration with master")
 
 -- Initialize colony integration if enabled (optional for client)
-if config.COLONY and config.COLONY.ENABLED then
-    local ok, mod = pcall(dofile, "weatherSystem/station/colony_integration.lua")
-    if ok and mod then
-        colonyModule = mod
-        local initOk, initErr = pcall(function()
-            colonyModule.init(config.COLONY)
-            colonyAvailable = colonyModule.isAvailable()
-        end)
-        if initOk then
-            print("[INFO] Colony integration module loaded: " .. tostring(colonyAvailable))
-        else
-            print("[WARN] Colony module init failed: " .. tostring(initErr))
-        end
-    else
-        print("[WARN] Colony module failed to load: " .. tostring(mod))
-    end
-end
-
--- Redefine getActivePageList to include colony pages when available
-getActivePageList = function()
-    local base = {}
-    if #allStations > 1 then
-        base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
-    else
-        base = {"current", "hourly", "fiveday", "overview"}
-    end
-
-    if colonyAvailable and config.COLONY and config.COLONY.SHOW_PAGES then
-        local out = {}
-        for i, v in ipairs(base) do
-            table.insert(out, v)
-            if v == "overview" then
-                table.insert(out, "colony_summary")
-                table.insert(out, "colony_citizens")
-                table.insert(out, "colony_buildings")
-                table.insert(out, "colony_requests")
-            end
-        end
-        return out
-    end
-
-    return base
-end
-
--- Colony updater loop
-local function colonyLoop()
-    while true do
-        if colonyModule and colonyModule.isAvailable and colonyModule.isAvailable() then
-            local updated = colonyModule.update()
-            if updated then
-                colonyData = colonyModule.getData()
-            end
-        else
-            if colonyModule and colonyModule.detect then colonyModule.detect() end
-            colonyAvailable = colonyModule and colonyModule.isAvailable and colonyModule.isAvailable()
-        end
-        sleep((config.COLONY and config.COLONY.UPDATE_INTERVAL) or 30)
-    end
-end
-
 if monitor then
-    parallel.waitForAny(receiveLoop, displayLoop, cycleLoop, inputLoop, colonyLoop)
+    parallel.waitForAny(receiveLoop, displayLoop, cycleLoop, inputLoop)
 else
-    parallel.waitForAny(receiveLoop, statusLoop, inputLoop, colonyLoop)
-end
+    parallel.waitForAny(receiveLoop, statusLoop, input
 
 rednet.close(modemSide)
 if monitor and renderer then renderer.clear() end

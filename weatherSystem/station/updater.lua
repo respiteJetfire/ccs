@@ -1,6 +1,6 @@
 -- updater.lua
 -- Computer Craft Script Updater for Weather Station
-local version = "1.2.0"
+local version = "1.2.1"
 print("[INFO] Weather Station Updater v" .. version .. " starting...")
 
 -- Parse command line arguments
@@ -45,10 +45,8 @@ local function updateScripts()
             {remote = "weatherSystem/station/client_startup.lua", local_ = "startup.lua"},
             {remote = "weatherSystem/station/updater.lua", local_ = "updater.lua"},
             {remote = "weatherSystem/station/client.lua", local_ = "weatherSystem/station/client.lua"},
-            {remote = "weatherSystem/station/config.lua", local_ = "weatherSystem/station/config.lua"},
             {remote = "weatherSystem/station/ui_assets.lua", local_ = "weatherSystem/station/ui_assets.lua"},
             {remote = "weatherSystem/station/ui_renderer.lua", local_ = "weatherSystem/station/ui_renderer.lua"},
-            {remote = "weatherSystem/station/colony_integration.lua", local_ = "weatherSystem/station/colony_integration.lua"},
         }
         print("[INFO] Installing weather client (display-only, no registration)")
     else
