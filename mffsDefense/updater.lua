@@ -1,60 +1,53 @@
 -- CC script to auto-update from GitHub
-local version = "0.1.0"
-local GITHUB_USER = "respiteJetfire"
-local GITHUB_REPO = "ccs"
-local BRANCH = "main"
-local LOCAL_FOLDER = "mffsDefense"
-local FILES = {
-    "manager.lua",
-    "startup.lua",
-    "updater.lua"
-}
+-- CC script to auto-update from GitHub (copies startup/updater to root)
+local version = "0.2.0"
+local REPO_BASE = "https://github.com/respiteJetfire/ccs/blob/main/"
 
 print("[INFO] MFFS Defense Updater v" .. version)
 
--- Function to download a file from GitHub
-local function downloadFile(filename)
-    local url = string.format("https://raw.githubusercontent.com/%s/%s/%s/%s/%s",
-        GITHUB_USER, GITHUB_REPO, BRANCH, LOCAL_FOLDER, filename)
-    
-    print("[INFO] Downloading: " .. filename)
-    
+-- Function to download a file from GitHub (raw)
+local function downloadFile(remotePath, localPath)
+    local url = REPO_BASE .. remotePath .. "?raw=true"
+    print("[INFO] Downloading: " .. remotePath .. " -> " .. localPath)
     local response = http.get(url)
     if not response then
-        print("[ERROR] Failed to download " .. filename)
+        print("[ERROR] Failed to download " .. remotePath)
         return false
     end
-    
+
     local content = response.readAll()
     response.close()
-    
-    -- Ensure directory exists
-    if not fs.exists(LOCAL_FOLDER) then
-        fs.makeDir(LOCAL_FOLDER)
+
+    local dir = localPath:match("(.+)/[^/]+$")
+    if dir and not fs.exists(dir) then
+        fs.makeDir(dir)
     end
-    
-    local filepath = fs.combine(LOCAL_FOLDER, filename)
-    local file = fs.open(filepath, "w")
+
+    local file = fs.open(localPath, "w")
     file.write(content)
     file.close()
-    
-    print("[INFO] Updated: " .. filename)
+
+    print("[OK] Updated: " .. localPath)
     return true
 end
 
--- Main update process
-print("[INFO] Checking for updates...")
-local success = true
-for _, filename in ipairs(FILES) do
-    if not downloadFile(filename) then
-        success = false
+-- Files to update: manager stays in folder, startup/updater copied to root
+local function updateScripts()
+    local filesToUpdate = {
+        { remote = "mffsDefense/manager.lua", local_ = "mffsDefense/manager.lua" },
+        { remote = "mffsDefense/startup.lua", local_ = "startup.lua" },
+        { remote = "mffsDefense/updater.lua", local_ = "updater.lua" },
+    }
+
+    for _, file in ipairs(filesToUpdate) do
+        local tempPath = file.local_ .. ".tmp"
+        if downloadFile(file.remote, tempPath) then
+            if fs.exists(file.local_) then fs.delete(file.local_) end
+            fs.move(tempPath, file.local_)
+        else
+            if fs.exists(tempPath) then fs.delete(tempPath) end
+        end
     end
 end
 
-if success then
-    print("[INFO] All files updated successfully")
-else
-    print("[WARN] Some files failed to update")
-end
-
-print("")
+updateScripts()
