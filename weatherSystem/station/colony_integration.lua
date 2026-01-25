@@ -1,6 +1,6 @@
 -- weatherSystem/station/colony_integration.lua
 -- Colony Integrator Module (per plans/colony_integration_design.md)
-local version = "1.0.0"
+local version = "1.1.0"
 
 local colony = {}
 
@@ -35,14 +35,23 @@ end
 
 -- Scan for colony peripheral (match any peripheral type containing "colony")
 function colony.detect()
-    for _, name in ipairs(peripheral.getNames()) do
-        local pType = peripheral.getType(name)
-        if pType and pType:lower():find("colony") then
-            local ok, wrap = pcall(peripheral.wrap, name)
-            if ok and wrap then
-                peripheralRef = wrap
-                enabled = true
-                return peripheralRef
+    local names = peripheral.getNames()
+    if not names then 
+        peripheralRef = nil
+        enabled = false
+        return nil 
+    end
+    
+    for _, name in ipairs(names) do
+        local ok, pType = pcall(peripheral.getType, name)
+        if ok and pType and type(pType) == "string" then
+            if pType:lower():find("colony") then
+                local ok2, wrap = pcall(peripheral.wrap, name)
+                if ok2 and wrap then
+                    peripheralRef = wrap
+                    enabled = true
+                    return peripheralRef
+                end
             end
         end
     end
