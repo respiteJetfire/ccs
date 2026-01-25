@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
 -- Weather Station v6.3.9 - Improved XL cloud designs
 -- Master handles all forecasting - station registers and displays
-local version = "6.3.9"
+local version = "7.0.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -86,6 +86,11 @@ local currentPageIndex = 1
 local otherStationIndex = 0  -- Index for cycling through other stations
 local cachedOtherStation = nil  -- Cached other station for "other" pages
 local cachedOtherForecast = nil
+
+-- Colony integration state
+local colonyModule = nil
+local colonyData = nil
+local colonyAvailable = false
 
 -- Detect biome data
 local function detectBiomeData()
@@ -325,7 +330,7 @@ local function displayLoop()
             }
             
             -- Render page (local station for main pages, cached other station for "other" pages)
-            renderer.renderPage(displayForecast, allStations, currentPage, localIdx, cachedOtherStation, cachedOtherForecast)
+            renderer.renderPage(displayForecast, allStations, currentPage, localIdx, cachedOtherStation, cachedOtherForecast, colonyData)
             
             -- Advance animation frame
             assets.nextFrame()
@@ -410,10 +415,67 @@ print("[INFO] Keys: Q=quit, R=refresh, N/P=page, C=color")
 
 registerStation()
 
+-- Initialize colony integration if enabled
+if config.COLONY and config.COLONY.ENABLED then
+    local ok, mod = pcall(dofile, "weatherSystem/station/colony_integration.lua")
+    if ok and mod then
+        colonyModule = mod
+        colonyModule.init(config.COLONY)
+        colonyAvailable = colonyModule.isAvailable()
+        print("[INFO] Colony integration module loaded: " .. tostring(colonyAvailable))
+    else
+        print("[WARN] Colony module failed to load")
+    end
+end
+
+-- If monitor and colony available, add colony pages to active list when building active pages
+local function getActivePageList()
+    local base = {}
+    if #allStations > 1 then
+        base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+    else
+        base = {"current", "hourly", "fiveday", "overview"}
+    end
+
+    if colonyAvailable and config.COLONY and config.COLONY.SHOW_PAGES then
+        -- insert colony pages after overview
+        local out = {}
+        for i, v in ipairs(base) do
+            table.insert(out, v)
+            if v == "overview" then
+                table.insert(out, "colony_summary")
+                table.insert(out, "colony_citizens")
+                table.insert(out, "colony_buildings")
+                table.insert(out, "colony_requests")
+            end
+        end
+        return out
+    end
+
+    return base
+end
+
+-- Colony updater loop
+local function colonyLoop()
+    while true do
+        if colonyModule and colonyModule.isAvailable and colonyModule.isAvailable() then
+            local updated = colonyModule.update()
+            if updated then
+                colonyData = colonyModule.getData()
+            end
+        else
+            -- attempt re-detect every 30s
+            if colonyModule and colonyModule.detect then colonyModule.detect() end
+            colonyAvailable = colonyModule and colonyModule.isAvailable and colonyModule.isAvailable()
+        end
+        sleep((config.COLONY and config.COLONY.UPDATE_INTERVAL) or 30)
+    end
+end
+
 if monitor then
-    parallel.waitForAny(heartbeatLoop, receiveLoop, displayLoop, cycleLoop, inputLoop)
+    parallel.waitForAny(heartbeatLoop, receiveLoop, displayLoop, cycleLoop, inputLoop, colonyLoop)
 else
-    parallel.waitForAny(heartbeatLoop, receiveLoop, inputLoop)
+    parallel.waitForAny(heartbeatLoop, receiveLoop, inputLoop, colonyLoop)
 end
 
 rednet.close(modemSide)

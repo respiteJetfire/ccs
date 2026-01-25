@@ -1,6 +1,6 @@
 -- weatherSystem/station/config.lua
 -- Configuration for Weather Station with Integrated Display
-local version = "6.3.9"
+local version = "7.0.0"
 
 local config = {
     -- Station identification
@@ -38,6 +38,26 @@ local config = {
         dimension = "minecraft:overworld",
         biome = nil
     }
+}
+
+-- Colony integration defaults
+config.COLONY = {
+    ENABLED = true,                    -- Enable colony integration (auto-detect)
+    UPDATE_INTERVAL = 30,              -- Seconds between colony data updates
+    SHOW_PAGES = true,                 -- Include colony pages in rotation
+
+    -- Data collection toggles
+    COLLECT_CITIZENS = true,           -- Collect citizen data
+    COLLECT_BUILDINGS = true,          -- Collect building data
+    COLLECT_REQUESTS = true,           -- Collect request data
+    COLLECT_RESEARCH = true,           -- Collect research data
+    COLLECT_VISITORS = true,           -- Collect visitor data
+
+    -- Display options
+    MAX_CITIZENS_DISPLAY = 15,         -- Max citizens to show in list
+    MAX_REQUESTS_DISPLAY = 10,         -- Max requests to show
+    SORT_CITIZENS_BY = "happiness",  -- "happiness", "health", "name"
+    SHOW_IDLE_CITIZENS = true          -- Show idle citizens in list
 }
 
 -- Color presets for easy selection
@@ -207,6 +227,14 @@ function config.load()
             file.close()
             local loaded = textutils.unserialiseJSON(data)
             if loaded then
+                -- Merge COLONY settings to preserve defaults
+                if loaded.COLONY and type(loaded.COLONY) == "table" then
+                    for k, v in pairs(loaded.COLONY) do
+                        config.COLONY[k] = v
+                    end
+                    loaded.COLONY = nil
+                end
+
                 for k, v in pairs(loaded) do
                     config[k] = v
                 end
@@ -239,7 +267,8 @@ function config.save()
             COLLECT_INTERVAL = config.COLLECT_INTERVAL,
             SEND_INTERVAL = config.SEND_INTERVAL,
             LOCATION = config.LOCATION,
-            DISPLAY = config.DISPLAY
+            DISPLAY = config.DISPLAY,
+            COLONY = config.COLONY
         }
         file.write(textutils.serialiseJSON(saveData))
         file.close()

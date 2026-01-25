@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
 -- UI Renderer v6.3.9 - Improved XL cloud designs
-local version = "6.3.9"
+local version = "6.4.0"
 
 local renderer = {}
 
@@ -18,6 +18,28 @@ local monitorHeight = 19
 -- Display size thresholds
 local isLargeDisplay = false  -- Width >= 60 and height >= 25
 local isXLDisplay = false     -- Width >= 80 and height >= 30
+
+-- Colony helper: render small icon from assets
+local function drawColonyIcon(x, y, iconName, fg)
+    if not assets or not assets.icons or not assets.icons[iconName] then return end
+    local icon = assets.icons[iconName]
+    for i = 1, math.min(#icon, monitorHeight - y + 1) do
+        renderer.drawText(x, y + i - 1, icon[i], fg or assets.colors.textPrimary, getBackgroundColor())
+    end
+end
+
+-- Render dispatcher helper for colony pages
+local function renderColonyPage(page, colonyData)
+    if page == "colony_summary" then
+        renderer.drawColonySummaryPage(colonyData)
+    elseif page == "colony_citizens" then
+        renderer.drawColonyCitizensPage(colonyData)
+    elseif page == "colony_buildings" then
+        renderer.drawColonyBuildingsPage(colonyData)
+    elseif page == "colony_requests" then
+        renderer.drawColonyRequestsPage(colonyData)
+    end
+end
 
 -- Initialize renderer with assets reference
 function renderer.init(mon, assetsModule, configModule)
@@ -744,36 +766,53 @@ function renderer.drawOtherStation5Day(forecast, station, stationForecast)
 end
 
 -- Render specific page
-function renderer.renderPage(forecast, stations, page, stationIndex, otherStation, otherStationForecast)
+function renderer.renderPage(forecast, stations, page, stationIndex, otherStation, otherStationForecast, colonyData)
     renderer.clear()
-    
-    -- Calculate total pages
-    local hasOtherStations = stations and #stations > 1
-    local totalPages = hasOtherStations and 6 or 4
-    
-    local pageNames = {
-        current = "1/" .. totalPages .. " Now",
-        hourly = "2/" .. totalPages .. " 24hr",
-        fiveday = "3/" .. totalPages .. " 5day",
-        overview = "4/" .. totalPages .. " All",
-        other5day = "5/" .. totalPages .. " Other",
-        othercurrent = "6/" .. totalPages .. " Other"
-    }
-    
+
+    -- Build page order dynamically (accounts for other stations and optional colony pages)
+    local base = {}
+    if stations and #stations > 1 then
+        base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+    else
+        base = {"current", "hourly", "fiveday", "overview"}
+    end
+
+    local includeColony = false
+    if config and config.COLONY and config.COLONY.SHOW_PAGES and colonyData then includeColony = true end
+
+    local pageOrder = {}
+    for i, v in ipairs(base) do
+        table.insert(pageOrder, v)
+        if v == "overview" and includeColony then
+            table.insert(pageOrder, "colony_summary")
+            table.insert(pageOrder, "colony_citizens")
+            table.insert(pageOrder, "colony_buildings")
+            table.insert(pageOrder, "colony_requests")
+        end
+    end
+
+    -- Map page to human-friendly indicator
+    local pageNames = {}
+    for i, v in ipairs(pageOrder) do
+        local short = v == "current" and "Now" or (v == "hourly" and "24hr") or (v == "fiveday" and "5day") or (v == "overview" and "All") or (v == "other5day" and "Other") or (v == "othercurrent" and "Other") or (v:match("colony_") and v:gsub("colony_", "Col ")) or v
+        pageNames[v] = tostring(i) .. "/" .. tostring(#pageOrder) .. " " .. short
+    end
+
     local stationName = forecast.stationName or "Weather Station"
     local stationIndicator = ""
     if stations and #stations > 1 then
         stationIndicator = " [" .. tostring(stationIndex) .. "/" .. tostring(#stations) .. "]"
     end
-    
+
     -- For "other" pages, show that station's name
     local headerName = stationName
     if (page == "other5day" or page == "othercurrent") and otherStation then
         headerName = otherStation.name or "Other Station"
     end
-    
+
     renderer.drawHeader(headerName .. stationIndicator, os.time(), pageNames[page] or "")
-    
+
+    -- Dispatch to appropriate renderer, including colony pages
     if page == "current" then
         renderer.drawCurrentPage(forecast)
     elseif page == "hourly" then
@@ -786,10 +825,12 @@ function renderer.renderPage(forecast, stations, page, stationIndex, otherStatio
         renderer.drawOtherStation5Day(forecast, otherStation, otherStationForecast)
     elseif page == "othercurrent" and otherStation and otherStationForecast then
         renderer.drawOtherStationCurrent(forecast, otherStation, otherStationForecast)
+    elseif page:sub(1,7) == "colony_" then
+        renderColonyPage(page, colonyData)
     else
         renderer.drawCurrentPage(forecast)
     end
-    
+
     -- Footer with day info
     local day = forecast.gameDay or os.day()
     renderer.drawFooter("Day " .. tostring(day) .. " | v" .. version)

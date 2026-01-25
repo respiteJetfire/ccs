@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_assets.lua
 -- UI Assets v6.3.9 - Improved XL cloud designs with fluffy multi-cloud style
-local version = "6.3.9"
+local version = "6.4.0"
 
 local assets = {}
 
@@ -22,6 +22,13 @@ assets.colors = {
     textWarning = colors.orange,
     textDanger = colors.red,
     textSuccess = colors.lime,
+
+    -- Colony palette
+    colonyOnline = colors.lime,
+    colonyOffline = colors.gray,
+    colonyWarning = colors.orange,
+    colonySuccess = colors.lime,
+    colonyDanger = colors.red,
     
     -- Weather state colors
     clear = colors.yellow,
@@ -275,12 +282,112 @@ assets.animatedLargeIcons = {
     }
 }
 
+-- Colony palette extensions and helpers
+-- Expanded colony color ranges for health and happiness and status
+assets.colors.colonyHealthGood = colors.lime
+assets.colors.colonyHealthMedium = colors.orange
+assets.colors.colonyHealthLow = colors.red
+assets.colors.colonyHappinessHigh = colors.lime
+assets.colors.colonyHappinessNeutral = colors.yellow
+assets.colors.colonyHappinessLow = colors.orange
+
+-- Colony symbol glyphs for compact rendering
+assets.colonySymbols = {
+    citizen = "c",
+    building = "b",
+    request = "!",
+    research = "?",
+    status = {
+        healthy = "+",
+        injured = "-",
+        critical = "x",
+        offline = "o",
+        online = "+"
+    }
+}
+
+-- Helper: health color based on current/max
+function assets.getHealthColor(current, max)
+    if not current or not max or max == 0 then return assets.colors.colonyOffline end
+    local ratio = current / max
+    if ratio >= 0.75 then
+        return assets.colors.colonyHealthGood
+    elseif ratio >= 0.4 then
+        return assets.colors.colonyHealthMedium
+    else
+        return assets.colors.colonyHealthLow
+    end
+end
+
+-- Helper: happiness color based on 0-100 scale
+function assets.getHappinessColor(value)
+    if not value then return assets.colors.colonyOffline end
+    if value >= 75 then
+        return assets.colors.colonyHappinessHigh
+    elseif value >= 40 then
+        return assets.colors.colonyHappinessNeutral
+    else
+        return assets.colors.colonyHappinessLow
+    end
+end
+
+-- Helper: map status string to a color
+function assets.getStatusColor(status)
+    if not status then return assets.colors.colonyOffline end
+    status = tostring(status):lower()
+    if status == "online" or status == "healthy" or status == "ok" then
+        return assets.colors.colonyOnline
+    elseif status == "warning" or status == "injured" then
+        return assets.colors.colonyWarning
+    elseif status == "success" or status == "good" then
+        return assets.colors.colonySuccess
+    elseif status == "danger" or status == "critical" or status == "offline" then
+        return assets.colors.colonyDanger
+    else
+        return assets.colors.textSecondary
+    end
+end
+
+-- Helper: return a glyph for a colony icon key
+function assets.getColonyIcon(key)
+    if not key then
+        return (assets.colonySymbols and assets.colonySymbols.status and assets.colonySymbols.status.healthy) or "?"
+    end
+    key = tostring(key):lower()
+    if assets.colonySymbols[key] then return assets.colonySymbols[key] end
+    if assets.colonySymbols.status and assets.colonySymbols.status[key] then
+        return assets.colonySymbols.status[key]
+    end
+    return "?"
+end
+
 -- ASCII art icons (3x3) - static fallback
 assets.icons = {
     sun = {
         " \\|/ ",
         "- O -",
         " /|\\ "
+    },
+    -- Colony icons
+    citizen = {
+        " o ",
+        "-|-",
+        " / "
+    },
+    building = {
+        "[] ",
+        "|| ",
+        "[] "
+    },
+    request = {
+        " > ",
+        " ! ",
+        "   "
+    },
+    research = {
+        " ? ",
+        " /\\",
+        "   "
     },
     clear = {
         " \\|/ ",
