@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.3.6 - Adaptive colors for light backgrounds
+-- Weather Station v6.3.7 - Fix icon backgrounds and XL icon cutoff
 -- Master handles all forecasting - station registers and displays
-local version = "6.3.6"
+local version = "6.3.7"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 

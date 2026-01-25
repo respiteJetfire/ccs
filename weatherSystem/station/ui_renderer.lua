@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.6 - Adaptive colors for light backgrounds and icon position fixes
-local version = "6.3.6"
+-- UI Renderer v6.3.7 - Fix icon backgrounds to use configured color and prevent XL icon cutoff
+local version = "6.3.7"
 
 local renderer = {}
 
@@ -180,21 +180,22 @@ function renderer.drawSmallIcon(x, y, state, color)
     
     for i, line in ipairs(icon) do
         if y + i - 1 <= monitorHeight then
-            renderer.drawText(x, y + i - 1, line, color, assets.colors.background)
+            renderer.drawText(x, y + i - 1, line, color, getBackgroundColor())
         end
     end
 end
 
 -- Draw temperature
 function renderer.drawTemperature(x, y, tempC, label)
+    local adaptiveColors = getAdaptiveColors()
     local tempColor = assets.getTemperatureColor(tempC)
     local tempStr = tostring(math.floor(tempC)) .. "C"
     
     if label then
-        renderer.drawText(x, y, label .. ": ", assets.colors.textSecondary, assets.colors.background)
-        renderer.drawText(x + #label + 2, y, tempStr, tempColor, assets.colors.background)
+        renderer.drawText(x, y, label .. ": ", adaptiveColors.textSecondary, getBackgroundColor())
+        renderer.drawText(x + #label + 2, y, tempStr, tempColor, getBackgroundColor())
     else
-        renderer.drawText(x, y, tempStr, tempColor, assets.colors.background)
+        renderer.drawText(x, y, tempStr, tempColor, getBackgroundColor())
     end
 end
 
@@ -215,45 +216,45 @@ function renderer.drawCurrentPage(forecast)
     
     -- Position adjustments for large displays
     local iconX = isLargeDisplay and 4 or 4
-    local iconY = 5
+    local iconY = isLargeDisplay and 6 or 6
     local startX = isLargeDisplay and 26 or 20
     local titleY = isLargeDisplay and 5 or 4
     
-    -- Draw large icon (y=5 to avoid header overlap)
+    -- Draw large icon (y=6 to avoid header overlap and prevent cutoff)
     renderer.drawLargeIcon(iconX, iconY, state, weatherColor)
     
     -- Current conditions header
-    renderer.drawText(startX, titleY, "Current Conditions", adaptiveColors.textHighlight, assets.colors.background)
-    renderer.drawLine(titleY + 1, "-", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawText(startX, titleY, "Current Conditions", adaptiveColors.textHighlight, getBackgroundColor())
+    renderer.drawLine(titleY + 1, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
     -- Weather state
     local stateStr = (state:sub(1,1):upper() .. state:sub(2)):gsub("partlycloudy", "Partly Cloudy")
-    renderer.drawText(startX, titleY + 2, "Weather: " .. stateStr, weatherColor, assets.colors.background)
+    renderer.drawText(startX, titleY + 2, "Weather: " .. stateStr, weatherColor, getBackgroundColor())
     
     -- Temperature
     renderer.drawTemperature(startX, titleY + 3, current.temperature or 15, "Temp")
     
     -- Rain chance
     renderer.drawText(startX, titleY + 4, "Rain: " .. tostring(current.rainChance or 0) .. "%", 
-        (current.rainChance or 0) > 50 and assets.colors.rain or assets.colors.textSecondary, 
-        assets.colors.background)
+        (current.rainChance or 0) > 50 and assets.colors.rain or adaptiveColors.textSecondary, 
+        getBackgroundColor())
     
     -- Weather note - convert based on biome
     if current.weatherNote then
         local note = assets.convertNoteForBiome(current.weatherNote, biome)
-        renderer.drawText(startX, titleY + 5, note, assets.colors.textSecondary, assets.colors.background)
+        renderer.drawText(startX, titleY + 5, note, adaptiveColors.textSecondary, getBackgroundColor())
     end
     
     -- Extra info on large displays
     if isLargeDisplay then
         -- Humidity (if available)
         if current.humidity then
-            renderer.drawText(startX, titleY + 7, "Humidity: " .. tostring(current.humidity) .. "%", assets.colors.textSecondary, assets.colors.background)
+            renderer.drawText(startX, titleY + 7, "Humidity: " .. tostring(current.humidity) .. "%", adaptiveColors.textSecondary, getBackgroundColor())
         end
         
         -- Wind (if available)
         if current.windSpeed then
-            renderer.drawText(startX, titleY + 8, "Wind: " .. tostring(current.windSpeed) .. " km/h", assets.colors.textSecondary, assets.colors.background)
+            renderer.drawText(startX, titleY + 8, "Wind: " .. tostring(current.windSpeed) .. " km/h", adaptiveColors.textSecondary, getBackgroundColor())
         end
     end
     
@@ -262,26 +263,26 @@ function renderer.drawCurrentPage(forecast)
         local biomeDisplay = forecast.stationBiome:gsub("minecraft:", ""):gsub("_", " ")
         local maxLen = isLargeDisplay and 30 or 20
         if #biomeDisplay > maxLen then biomeDisplay = biomeDisplay:sub(1, maxLen - 2) .. ".." end
-        renderer.drawText(startX, titleY + (isLargeDisplay and 10 or 7), "Biome: " .. biomeDisplay, adaptiveColors.textSecondary, assets.colors.background)
+        renderer.drawText(startX, titleY + (isLargeDisplay and 10 or 7), "Biome: " .. biomeDisplay, adaptiveColors.textSecondary, getBackgroundColor())
     end
     
     -- Season
     if forecast.season then
-        renderer.drawText(2, monitorHeight - 3, "Season: " .. forecast.season, adaptiveColors.textHighlight, assets.colors.background)
+        renderer.drawText(2, monitorHeight - 3, "Season: " .. forecast.season, adaptiveColors.textHighlight, getBackgroundColor())
     end
     
     -- Summary - convert based on biome
     if forecast.summary then
         local summary = assets.convertNoteForBiome(forecast.summary, biome)
-        renderer.drawCenteredText(monitorHeight - 2, summary, adaptiveColors.textPrimary, assets.colors.background)
+        renderer.drawCenteredText(monitorHeight - 2, summary, adaptiveColors.textPrimary, getBackgroundColor())
     end
 end
 
 -- Draw 24-hour forecast page
 function renderer.draw24HourPage(forecast)
     local adaptiveColors = getAdaptiveColors()
-    renderer.drawText(2, 3, "24-Hour Forecast", adaptiveColors.textHighlight, assets.colors.background)
-    renderer.drawLine(4, "-", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawText(2, 3, "24-Hour Forecast", adaptiveColors.textHighlight, getBackgroundColor())
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
     local hourlyData = forecast.hourly
     local biome = forecast.stationBiome
@@ -309,25 +310,25 @@ function renderer.draw24HourPage(forecast)
                 
                 -- Hour with D/N
                 local hourStr = string.format("%02d:00", hourForecast.hour)
-                renderer.drawText(x, rowY, dnStr .. " " .. hourStr, dnColor, assets.colors.background)
+                renderer.drawText(x, rowY, dnStr .. " " .. hourStr, dnColor, getBackgroundColor())
                 
                 -- Weather symbol with color - convert based on biome (animated)
                 local state = assets.convertWeatherForBiome(hourForecast.predictedState or "clear", biome)
                 local symbol = assets.getAnimatedSymbol(state)
                 local color = assets.getWeatherColor(state)
-                renderer.drawText(x, rowY + 1, symbol .. symbol .. symbol, color, assets.colors.background)
+                renderer.drawText(x, rowY + 1, symbol .. symbol .. symbol, color, getBackgroundColor())
                 
                 -- Temperature with color
                 if hourForecast.temperature then
                     local tempStr = tostring(math.floor(hourForecast.temperature)) .. "C"
-                    renderer.drawText(x, rowY + 2, tempStr, assets.getTemperatureColor(hourForecast.temperature), assets.colors.background)
+                    renderer.drawText(x, rowY + 2, tempStr, assets.getTemperatureColor(hourForecast.temperature), getBackgroundColor())
                 end
                 
                 -- Rain chance
                 if hourForecast.rainChance then
                     local rainStr = tostring(hourForecast.rainChance) .. "%"
-                    local rainColor = hourForecast.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                    renderer.drawText(x, rowY + 3, rainStr, rainColor, assets.colors.background)
+                    local rainColor = hourForecast.rainChance > 50 and assets.colors.rain or adaptiveColors.textSecondary
+                    renderer.drawText(x, rowY + 3, rainStr, rainColor, getBackgroundColor())
                 end
             end
         end
@@ -337,8 +338,8 @@ end
 -- Draw 5-day forecast page
 function renderer.draw5DayPage(forecast)
     local adaptiveColors = getAdaptiveColors()
-    renderer.drawText(2, 3, "5-Day Forecast", adaptiveColors.textHighlight, assets.colors.background)
-    renderer.drawLine(4, "-", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawText(2, 3, "5-Day Forecast", adaptiveColors.textHighlight, getBackgroundColor())
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
     local fiveDayData = forecast.fiveDay
     local biome = forecast.stationBiome
@@ -360,35 +361,35 @@ function renderer.draw5DayPage(forecast)
             if #dayName > colWidth - 1 then
                 dayName = dayName:sub(1, colWidth - 2)
             end
-            renderer.drawText(x, y, dayName, adaptiveColors.textHighlight, assets.colors.background)
+            renderer.drawText(x, y, dayName, adaptiveColors.textHighlight, getBackgroundColor())
             
             -- Weather symbol row - convert based on biome (animated)
             local state = assets.convertWeatherForBiome(dayForecast.predictedState or "clear", biome)
             local symbol = assets.getAnimatedSymbol(state)
             local color = assets.getWeatherColor(state)
-            renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, assets.colors.background)
+            renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, getBackgroundColor())
             
             -- State name
             local stateStr = state:sub(1, colWidth - 1)
-            renderer.drawText(x, y + 2, stateStr, color, assets.colors.background)
+            renderer.drawText(x, y + 2, stateStr, color, getBackgroundColor())
             
             -- High temp
             if dayForecast.highTemp then
                 local highStr = "H:" .. tostring(math.floor(dayForecast.highTemp))
-                renderer.drawText(x, y + 4, highStr, assets.colors.hot, assets.colors.background)
+                renderer.drawText(x, y + 4, highStr, assets.colors.hot, getBackgroundColor())
             end
             
             -- Low temp
             if dayForecast.lowTemp then
                 local lowStr = "L:" .. tostring(math.floor(dayForecast.lowTemp))
-                renderer.drawText(x, y + 5, lowStr, assets.colors.cold, assets.colors.background)
+                renderer.drawText(x, y + 5, lowStr, assets.colors.cold, getBackgroundColor())
             end
             
             -- Rain chance
             if dayForecast.rainChance then
                 local rainStr = tostring(dayForecast.rainChance) .. "%"
-                local rainColor = dayForecast.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                renderer.drawText(x, y + 6, rainStr, rainColor, assets.colors.background)
+                local rainColor = dayForecast.rainChance > 50 and assets.colors.rain or adaptiveColors.textSecondary
+                renderer.drawText(x, y + 6, rainStr, rainColor, getBackgroundColor())
             end
             
             -- Weather note (truncated) - convert based on biome
@@ -397,25 +398,25 @@ function renderer.draw5DayPage(forecast)
                 if #note > colWidth - 1 then
                     note = note:sub(1, colWidth - 2)
                 end
-                renderer.drawText(x, y + 8, note, assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(x, y + 8, note, adaptiveColors.textSecondary, getBackgroundColor())
             end
             
             -- Confidence indicator
             local confStr = dayForecast.confidence == "high" and "+" or (dayForecast.confidence == "medium" and "o" or "-")
-            renderer.drawText(x + colWidth - 2, y + 6, confStr, assets.colors.textSecondary, assets.colors.background)
+            renderer.drawText(x + colWidth - 2, y + 6, confStr, adaptiveColors.textSecondary, getBackgroundColor())
         end
     end
     
     -- Season
     if forecast.season then
-        renderer.drawText(2, monitorHeight - 2, "Season: " .. forecast.season, adaptiveColors.textSecondary, assets.colors.background)
+        renderer.drawText(2, monitorHeight - 2, "Season: " .. forecast.season, adaptiveColors.textSecondary, getBackgroundColor())
     end
 end
 
 -- Draw stations overview page (shows weather at each station)
 function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
     local adaptiveColors = getAdaptiveColors()
-    renderer.drawText(2, 3, "All Stations", adaptiveColors.textHighlight, assets.colors.background)
+    renderer.drawText(2, 3, "All Stations", adaptiveColors.textHighlight, getBackgroundColor())
     
     if not stations or #stations == 0 then
         renderer.drawCenteredText(8, "No stations registered", assets.colors.textWarning)
@@ -430,12 +431,12 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
     
     -- Standard display: compact table view
     -- Column headers
-    renderer.drawText(2, 4, "Station", adaptiveColors.textSecondary, assets.colors.background)
-    renderer.drawText(22, 4, "Wx", adaptiveColors.textSecondary, assets.colors.background)
-    renderer.drawText(26, 4, "Temp", adaptiveColors.textSecondary, assets.colors.background)
-    renderer.drawText(33, 4, "Rain", adaptiveColors.textSecondary, assets.colors.background)
-    renderer.drawText(40, 4, "Biome", adaptiveColors.textSecondary, assets.colors.background)
-    renderer.drawLine(5, "-", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawText(2, 4, "Station", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(22, 4, "Wx", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(26, 4, "Temp", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(33, 4, "Rain", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(40, 4, "Biome", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawLine(5, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
     local y = 6
     local maxStations = math.min(#stations, monitorHeight - 8)
@@ -450,7 +451,7 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
             -- Station name
             local name = station.name or ("Station " .. tostring(station.id))
             if #name > 17 then name = name:sub(1, 15) .. ".." end
-            renderer.drawText(2, y, prefix .. name, nameColor, assets.colors.background)
+            renderer.drawText(2, y, prefix .. name, nameColor, getBackgroundColor())
             
             -- Get station forecast if available - try both string and number keys
             local stationId = station.id
@@ -472,32 +473,32 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
                 local state = assets.convertWeatherForBiome(current.predictedState or "clear", stationBiome)
                 local symbol = assets.getAnimatedSymbol(state)
                 local color = assets.getWeatherColor(state)
-                renderer.drawText(22, y, symbol .. symbol, color, assets.colors.background)
+                renderer.drawText(22, y, symbol .. symbol, color, getBackgroundColor())
                 
                 -- Temperature
                 if current.temperature then
                     renderer.drawText(26, y, tostring(math.floor(current.temperature)) .. "C", 
-                        assets.getTemperatureColor(current.temperature), assets.colors.background)
+                        assets.getTemperatureColor(current.temperature), getBackgroundColor())
                 end
                 
                 -- Rain chance
                 if current.rainChance then
                     local rainStr = tostring(current.rainChance) .. "%"
-                    local rainColor = current.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                    renderer.drawText(33, y, rainStr, rainColor, assets.colors.background)
+                    local rainColor = current.rainChance > 50 and assets.colors.rain or adaptiveColors.textSecondary
+                    renderer.drawText(33, y, rainStr, rainColor, getBackgroundColor())
                 end
             else
                 -- No forecast data - show placeholder
-                renderer.drawText(22, y, "??", assets.colors.textSecondary, assets.colors.background)
-                renderer.drawText(26, y, "??C", assets.colors.textSecondary, assets.colors.background)
-                renderer.drawText(33, y, "??%", assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(22, y, "??", adaptiveColors.textSecondary, getBackgroundColor())
+                renderer.drawText(26, y, "??C", adaptiveColors.textSecondary, getBackgroundColor())
+                renderer.drawText(33, y, "??%", adaptiveColors.textSecondary, getBackgroundColor())
             end
             
             -- Biome (truncated)
             if station.biome then
                 local biomeStr = station.biome:gsub("minecraft:", ""):gsub("_", " ")
                 if #biomeStr > 12 then biomeStr = biomeStr:sub(1, 10) .. ".." end
-                renderer.drawText(40, y, biomeStr, assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(40, y, biomeStr, adaptiveColors.textSecondary, getBackgroundColor())
             end
             
             y = y + 1
@@ -505,13 +506,13 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
     end
     
     -- Show count
-    renderer.drawText(2, monitorHeight - 2, tostring(#stations) .. " station(s) online", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawText(2, monitorHeight - 2, tostring(#stations) .. " station(s) online", adaptiveColors.textSecondary, getBackgroundColor())
 end
 
 -- Large display overview with icons and detailed info per station
 function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
     local adaptiveColors = getAdaptiveColors()
-    renderer.drawLine(4, "-", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
     -- Calculate layout - show stations in a grid with small icons
     local stationsPerRow = isXLDisplay and 4 or 3
@@ -536,7 +537,7 @@ function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
             local name = station.name or ("Station " .. tostring(station.id))
             if #name > colWidth - 2 then name = name:sub(1, colWidth - 4) .. ".." end
             local prefix = isCurrentStation and ">" or " "
-            renderer.drawText(x, y, prefix .. name, nameColor, assets.colors.background)
+            renderer.drawText(x, y, prefix .. name, nameColor, getBackgroundColor())
             
             -- Get station forecast
             local stationId = station.id
@@ -562,7 +563,7 @@ function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
                 local icon = assets.getIcon(state)
                 if icon then
                     for j, line in ipairs(icon) do
-                        renderer.drawText(x + 2, y + j, line, color, assets.colors.background)
+                        renderer.drawText(x + 2, y + j, line, color, getBackgroundColor())
                     end
                 end
                 
@@ -571,19 +572,19 @@ function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
                 
                 -- State name
                 local stateStr = state:sub(1, colWidth - 9)
-                renderer.drawText(infoX, y + 1, stateStr, color, assets.colors.background)
+                renderer.drawText(infoX, y + 1, stateStr, color, getBackgroundColor())
                 
                 -- Temperature
                 if current.temperature then
                     local tempStr = tostring(math.floor(current.temperature)) .. "C"
-                    renderer.drawText(infoX, y + 2, tempStr, assets.getTemperatureColor(current.temperature), assets.colors.background)
+                    renderer.drawText(infoX, y + 2, tempStr, assets.getTemperatureColor(current.temperature), getBackgroundColor())
                 end
                 
                 -- Rain chance
                 if current.rainChance then
                     local rainStr = tostring(current.rainChance) .. "% rain"
-                    local rainColor = current.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                    renderer.drawText(infoX, y + 3, rainStr, rainColor, assets.colors.background)
+                    local rainColor = current.rainChance > 50 and assets.colors.rain or adaptiveColors.textSecondary
+                    renderer.drawText(infoX, y + 3, rainStr, rainColor, getBackgroundColor())
                 end
                 
                 -- High/Low temps (if available from 5-day)
@@ -591,25 +592,25 @@ function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
                     local today = stationForecast.fiveDay[1]
                     if today.highTemp and today.lowTemp then
                         local hiLoStr = "H:" .. math.floor(today.highTemp) .. " L:" .. math.floor(today.lowTemp)
-                        renderer.drawText(x, y + 5, hiLoStr, assets.colors.textSecondary, assets.colors.background)
+                        renderer.drawText(x, y + 5, hiLoStr, adaptiveColors.textSecondary, getBackgroundColor())
                     end
                 end
             else
                 -- No data
-                renderer.drawText(x, y + 2, "No data", assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(x, y + 2, "No data", adaptiveColors.textSecondary, getBackgroundColor())
             end
             
             -- Biome
             if station.biome then
                 local biomeStr = station.biome:gsub("minecraft:", ""):gsub("_", " ")
                 if #biomeStr > colWidth - 2 then biomeStr = biomeStr:sub(1, colWidth - 4) .. ".." end
-                renderer.drawText(x, y + 6, biomeStr, assets.colors.gray, assets.colors.background)
+                renderer.drawText(x, y + 6, biomeStr, assets.colors.gray, getBackgroundColor())
             end
         end
     end
     
     -- Show count at bottom
-    renderer.drawText(2, monitorHeight - 2, tostring(#stations) .. " station(s) online", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawText(2, monitorHeight - 2, tostring(#stations) .. " station(s) online", adaptiveColors.textSecondary, getBackgroundColor())
 end
 
 -- Draw another station's current conditions (for cycling)
@@ -633,37 +634,37 @@ function renderer.drawOtherStationCurrent(forecast, station, stationForecast)
     local state = assets.convertWeatherForBiome(current.predictedState or "clear", biome)
     local weatherColor = assets.getWeatherColor(state)
     
-    -- Draw large icon (y=5 to avoid header overlap)
-    renderer.drawLargeIcon(4, 5, state, weatherColor)
+    -- Draw large icon (y=6 to prevent cutoff)
+    renderer.drawLargeIcon(4, 6, state, weatherColor)
     
     -- Current conditions
     local startX = 20
-    renderer.drawText(startX, 4, "Current @ " .. (station.name or "Station"), adaptiveColors.textHighlight, assets.colors.background)
-    renderer.drawLine(5, "-", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawText(startX, 4, "Current @ " .. (station.name or "Station"), adaptiveColors.textHighlight, getBackgroundColor())
+    renderer.drawLine(5, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
     -- Weather state
     local stateStr = (state:sub(1,1):upper() .. state:sub(2)):gsub("partlycloudy", "Partly Cloudy")
-    renderer.drawText(startX, 6, "Weather: " .. stateStr, weatherColor, assets.colors.background)
+    renderer.drawText(startX, 6, "Weather: " .. stateStr, weatherColor, getBackgroundColor())
     
     -- Temperature
     renderer.drawTemperature(startX, 7, current.temperature or 15, "Temp")
     
     -- Rain chance
     renderer.drawText(startX, 8, "Rain: " .. tostring(current.rainChance or 0) .. "%", 
-        (current.rainChance or 0) > 50 and assets.colors.rain or assets.colors.textSecondary, 
-        assets.colors.background)
+        (current.rainChance or 0) > 50 and assets.colors.rain or adaptiveColors.textSecondary, 
+        getBackgroundColor())
     
     -- Weather note - convert based on biome
     if current.weatherNote then
         local note = assets.convertNoteForBiome(current.weatherNote, biome)
-        renderer.drawText(startX, 9, note, assets.colors.textSecondary, assets.colors.background)
+        renderer.drawText(startX, 9, note, adaptiveColors.textSecondary, getBackgroundColor())
     end
     
     -- Biome
     if biome then
         local biomeDisplay = biome:gsub("minecraft:", ""):gsub("_", " ")
         if #biomeDisplay > 20 then biomeDisplay = biomeDisplay:sub(1, 18) .. ".." end
-        renderer.drawText(startX, 11, "Biome: " .. biomeDisplay, adaptiveColors.textSecondary, assets.colors.background)
+        renderer.drawText(startX, 11, "Biome: " .. biomeDisplay, adaptiveColors.textSecondary, getBackgroundColor())
     end
 end
 
@@ -678,8 +679,8 @@ function renderer.drawOtherStation5Day(forecast, station, stationForecast)
     local biome = station.biome
     local fiveDayData = stationForecast.fiveDay
     
-    renderer.drawText(2, 3, "5-Day @ " .. (station.name or "Station"), adaptiveColors.textHighlight, assets.colors.background)
-    renderer.drawLine(4, "-", adaptiveColors.textSecondary, assets.colors.background)
+    renderer.drawText(2, 3, "5-Day @ " .. (station.name or "Station"), adaptiveColors.textHighlight, getBackgroundColor())
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
     if not fiveDayData or #fiveDayData == 0 then
         renderer.drawCenteredText(8, "No 5-day forecast", assets.colors.textWarning)
@@ -699,35 +700,35 @@ function renderer.drawOtherStation5Day(forecast, station, stationForecast)
             if #dayName > colWidth - 1 then
                 dayName = dayName:sub(1, colWidth - 2)
             end
-            renderer.drawText(x, y, dayName, adaptiveColors.textHighlight, assets.colors.background)
+            renderer.drawText(x, y, dayName, adaptiveColors.textHighlight, getBackgroundColor())
             
             -- Weather symbol row - convert based on biome (animated)
             local state = assets.convertWeatherForBiome(dayForecast.predictedState or "clear", biome)
             local symbol = assets.getAnimatedSymbol(state)
             local color = assets.getWeatherColor(state)
-            renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, assets.colors.background)
+            renderer.drawText(x, y + 1, symbol .. " " .. symbol .. " " .. symbol, color, getBackgroundColor())
             
             -- State name
             local stateStr = state:sub(1, colWidth - 1)
-            renderer.drawText(x, y + 2, stateStr, color, assets.colors.background)
+            renderer.drawText(x, y + 2, stateStr, color, getBackgroundColor())
             
             -- High temp
             if dayForecast.highTemp then
                 local highStr = "H:" .. tostring(math.floor(dayForecast.highTemp))
-                renderer.drawText(x, y + 4, highStr, assets.colors.hot, assets.colors.background)
+                renderer.drawText(x, y + 4, highStr, assets.colors.hot, getBackgroundColor())
             end
             
             -- Low temp
             if dayForecast.lowTemp then
                 local lowStr = "L:" .. tostring(math.floor(dayForecast.lowTemp))
-                renderer.drawText(x, y + 5, lowStr, assets.colors.cold, assets.colors.background)
+                renderer.drawText(x, y + 5, lowStr, assets.colors.cold, getBackgroundColor())
             end
             
             -- Rain chance
             if dayForecast.rainChance then
                 local rainStr = tostring(dayForecast.rainChance) .. "%"
-                local rainColor = dayForecast.rainChance > 50 and assets.colors.rain or assets.colors.textSecondary
-                renderer.drawText(x, y + 6, rainStr, rainColor, assets.colors.background)
+                local rainColor = dayForecast.rainChance > 50 and assets.colors.rain or adaptiveColors.textSecondary
+                renderer.drawText(x, y + 6, rainStr, rainColor, getBackgroundColor())
             end
             
             -- Weather note - convert based on biome
@@ -736,7 +737,7 @@ function renderer.drawOtherStation5Day(forecast, station, stationForecast)
                 if #note > colWidth - 1 then
                     note = note:sub(1, colWidth - 2)
                 end
-                renderer.drawText(x, y + 8, note, assets.colors.textSecondary, assets.colors.background)
+                renderer.drawText(x, y + 8, note, adaptiveColors.textSecondary, getBackgroundColor())
             end
         end
     end
