@@ -1,6 +1,6 @@
 -- weatherSystem/station/config.lua
 -- Configuration for Weather Station with Integrated Display
-local version = "6.3.4"
+local version = "6.3.5"
 
 local config = {
     -- Station identification
@@ -59,6 +59,29 @@ local colorPresets = {
     {name = "Pink", color = colors.pink},
     {name = "Brown", color = colors.brown}
 }
+
+-- Cycle to next background color
+function config.nextBackgroundColor()
+    -- Find current color index
+    local currentIndex = 1
+    for i, preset in ipairs(colorPresets) do
+        if preset.color == config.DISPLAY.BACKGROUND_COLOR then
+            currentIndex = i
+            break
+        end
+    end
+    
+    -- Move to next color
+    currentIndex = currentIndex + 1
+    if currentIndex > #colorPresets then
+        currentIndex = 1
+    end
+    
+    config.DISPLAY.BACKGROUND_COLOR = colorPresets[currentIndex].color
+    config.save()
+    
+    return colorPresets[currentIndex].name
+end
 
 -- Interactive first-time setup
 local function interactiveSetup()

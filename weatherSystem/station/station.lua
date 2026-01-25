@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
--- Weather Station v6.3.4 - Fix icon cutoff
+-- Weather Station v6.3.5 - Add key press to toggle background color
 -- Master handles all forecasting - station registers and displays
-local version = "6.3.4"
+local version = "6.3.5"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -395,13 +395,18 @@ local function inputLoop()
                 if currentPageIndex < 1 then currentPageIndex = #activePages end
                 currentPage = activePages[currentPageIndex]
             end
+        elseif key == keys.c then
+            if monitor then
+                local colorName = config.nextBackgroundColor()
+                print("[INFO] Background color: " .. colorName)
+            end
         end
     end
 end
 
 -- Main
 print("[INFO] Weather Station running...")
-print("[INFO] Keys: Q=quit, R=refresh, N/P=page")
+print("[INFO] Keys: Q=quit, R=refresh, N/P=page, C=color")
 
 registerStation()
 

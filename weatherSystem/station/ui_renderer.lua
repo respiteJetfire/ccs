@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.4 - Fix icon cutoff on left side
-local version = "6.3.4"
+-- UI Renderer v6.3.5 - Color toggle support
+local version = "6.3.5"
 
 local renderer = {}
 
