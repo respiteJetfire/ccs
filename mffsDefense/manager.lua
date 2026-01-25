@@ -1,6 +1,6 @@
 -- CC script to automatically control MFFS peripherals based on time and mob detection
 -- Monitors power levels and activates defenses when needed
-local version = "0.2.1"
+local version = "0.2.2"
 local CHECK_INTERVAL = 2  -- seconds between checks
 local MOB_DETECTION_RANGE = 30  -- blocks
 local MIN_POWER_PERCENT = 50  -- minimum power % to activate defenses
@@ -94,8 +94,9 @@ local defensesActive = false
 
 -- Function to check if it's nighttime
 local function isNighttime()
+    -- os.time() returns the current Minecraft world time (0-23999)
     local time = os.time()
-    -- In Minecraft, nighttime is 13000 <= time < 23000
+    -- Nighttime is 13000 <= time < 23000 (matches weather station logic)
     return time >= 13000 and time < 23000
 end
 
