@@ -1,6 +1,6 @@
 -- CC script to automatically control MFFS peripherals based on time and mob detection
 -- Monitors power levels and activates defenses when needed
-local version = "0.1.0"
+local version = "0.2.0"
 local CHECK_INTERVAL = 2  -- seconds between checks
 local MOB_DETECTION_RANGE = 30  -- blocks
 local MIN_POWER_PERCENT = 50  -- minimum power % to activate defenses
@@ -236,7 +236,26 @@ local function evaluateDefenseConditions()
     -- Check for nighttime
     local night = isNighttime()
     if night then
-       Always manage power devices based on power level
+        return true, "Nighttime detected"
+    end
+    
+    -- Check for hostile mobs
+    local hostilesDetected, hostileCount = detectHostileMobs()
+    if hostilesDetected then
+        return true, string.format("Hostile mobs detected (%d)", hostileCount)
+    end
+    
+    return false, "All clear"
+end
+
+-- Main monitoring loop
+print("[INFO] MFFS Defense monitoring active...")
+print("")
+while true do
+    -- Check for energy updates
+    checkEnergyUpdate()
+    
+    -- Always manage power devices based on power level
     managePowerDevices(latestEnergyData.percentFull)
     
     -- Evaluate conditions for projector activation
@@ -260,26 +279,7 @@ local function evaluateDefenseConditions()
     print(string.format("%s Power: %.1f%% | Infrastructure: %s | Night: %s | Projectors: %s", 
         statusColor,
         latestEnergyData.percentFull,
-        powerStatus
-    local shouldActivate, reason = evaluateDefenseConditions()
-    
-    -- Update defense state
-    if shouldActivate then
-        if not defensesActive then
-            activateDefenses(reason)
-        end
-    else
-        if defensesActive then
-            print("[INFO] " .. reason)
-            deactivateDefenses()
-        end
-    end
-    
-    -- Status display
-    local statusColor = defensesActive and "[ACTIVE]" or "[STANDBY]"
-    print(string.format("%s Power: %.1f%% | Night: %s | Defenses: %s", 
-        statusColor,
-        latestEnergyData.percentFull,
+        powerStatus,
         isNighttime() and "YES" or "NO",
         defensesActive and "ON" or "OFF"))
     
