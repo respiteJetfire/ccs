@@ -1,5 +1,5 @@
 -- weatherSystem/station/ui_assets.lua
--- UI Assets v6.3.3 - Configurable background color
+-- UI Assets v6.3.4 - Fix icon cutoff
 local version = "6.3.3"
 
 local assets = {}

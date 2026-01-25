@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.3 - Configurable background color
-local version = "6.3.3"
+-- UI Renderer v6.3.4 - Fix icon cutoff on left side
+local version = "6.3.4"
 
 local renderer = {}
 
@@ -185,7 +185,7 @@ function renderer.drawCurrentPage(forecast)
     local titleY = isLargeDisplay and 5 or 4
     
     -- Draw large icon (y=5 to avoid header overlap)
-    renderer.drawLargeIcon(2, iconY, state, weatherColor)
+    renderer.drawLargeIcon(3, iconY, state, weatherColor)
     
     -- Current conditions header
     renderer.drawText(startX, titleY, "Current Conditions", assets.colors.textHighlight, assets.colors.background)
@@ -523,12 +523,12 @@ function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
                 local icon = assets.getIcon(state)
                 if icon then
                     for j, line in ipairs(icon) do
-                        renderer.drawText(x, y + j, line, color, assets.colors.background)
+                        renderer.drawText(x + 1, y + j, line, color, assets.colors.background)
                     end
                 end
                 
                 -- Weather info next to icon
-                local infoX = x + 7
+                local infoX = x + 8
                 
                 -- State name
                 local stateStr = state:sub(1, colWidth - 9)
@@ -594,7 +594,7 @@ function renderer.drawOtherStationCurrent(forecast, station, stationForecast)
     local weatherColor = assets.getWeatherColor(state)
     
     -- Draw large icon (y=5 to avoid header overlap)
-    renderer.drawLargeIcon(2, 5, state, weatherColor)
+    renderer.drawLargeIcon(3, 5, state, weatherColor)
     
     -- Current conditions
     local startX = 18

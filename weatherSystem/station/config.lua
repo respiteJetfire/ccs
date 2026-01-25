@@ -1,6 +1,6 @@
 -- weatherSystem/station/config.lua
 -- Configuration for Weather Station with Integrated Display
-local version = "6.3.3"
+local version = "6.3.4"
 
 local config = {
     -- Station identification
