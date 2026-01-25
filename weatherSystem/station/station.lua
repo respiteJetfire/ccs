@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
 -- Weather Station v6.3.9 - Improved XL cloud designs
 -- Master handles all forecasting - station registers and displays
-local version = "7.0.0"
+local version = "7.0.1"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -251,8 +251,9 @@ local function selectNextOtherStation()
                           currentForecast.stationForecasts[stationId]
 end
 
--- Get current page list based on whether we have other stations
-local function getActivePageList()
+-- Get current page list based on whether we have other stations (will be redefined after colony init)
+local getActivePageList
+getActivePageList = function()
     if #allStations > 1 then
         return {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
     else
@@ -428,8 +429,8 @@ if config.COLONY and config.COLONY.ENABLED then
     end
 end
 
--- If monitor and colony available, add colony pages to active list when building active pages
-local function getActivePageList()
+-- Redefine getActivePageList to include colony pages when available
+getActivePageList = function()
     local base = {}
     if #allStations > 1 then
         base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
