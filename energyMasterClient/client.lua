@@ -19,7 +19,7 @@ end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
 rednet.open(modemSide)
 
--- Find monitor
+-- Find monitor (or use computer screen)
 print("[INFO] Searching for monitor...")
 local monitor = nil
 local monitorSide = nil
@@ -31,9 +31,12 @@ for _, side in ipairs(peripheral.getNames()) do
     end
 end
 if not monitor then
-    error("[ERROR] No monitor found! Please attach a monitor.")
+    print("[INFO] No monitor found, using computer screen")
+    monitor = term.current()
+    monitorSide = "terminal"
+else
+    print("[INFO] Monitor found on " .. monitorSide)
 end
-print("[INFO] Monitor found on " .. monitorSide)
 
 -- Store latest energy data
 local energyData = {
