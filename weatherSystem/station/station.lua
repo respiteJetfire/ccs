@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
 -- Weather Station v6.3.9 - Improved XL cloud designs
 -- Master handles all forecasting - station registers and displays
-local version = "7.0.1"
+local version = "7.0.2"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -421,11 +421,17 @@ if config.COLONY and config.COLONY.ENABLED then
     local ok, mod = pcall(dofile, "weatherSystem/station/colony_integration.lua")
     if ok and mod then
         colonyModule = mod
-        colonyModule.init(config.COLONY)
-        colonyAvailable = colonyModule.isAvailable()
-        print("[INFO] Colony integration module loaded: " .. tostring(colonyAvailable))
+        local initOk, initErr = pcall(function()
+            colonyModule.init(config.COLONY)
+            colonyAvailable = colonyModule.isAvailable()
+        end)
+        if initOk then
+            print("[INFO] Colony integration module loaded: " .. tostring(colonyAvailable))
+        else
+            print("[WARN] Colony module init failed: " .. tostring(initErr))
+        end
     else
-        print("[WARN] Colony module failed to load")
+        print("[WARN] Colony module failed to load: " .. tostring(mod))
     end
 end
 
