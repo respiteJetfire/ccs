@@ -1,6 +1,6 @@
 -- CC script to automatically control MFFS peripherals based on time and mob detection
 -- Monitors power levels and activates defenses when needed
-local version = "0.2.2"
+local version = "0.3.0"
 local CHECK_INTERVAL = 2  -- seconds between checks
 local MOB_DETECTION_RANGE = 30  -- blocks
 local MIN_POWER_PERCENT = 50  -- minimum power % to activate defenses
@@ -94,9 +94,12 @@ local defensesActive = false
 
 -- Function to check if it's nighttime
 local function isNighttime()
-    -- os.time() returns the current Minecraft world time (0-23999)
+    if envDetector and envDetector.isNight then
+        local ok, result = pcall(envDetector.isNight)
+        if ok then return result end
+    end
+    -- fallback to os.time() if needed
     local time = os.time()
-    -- Nighttime is 13000 <= time < 23000 (matches weather station logic)
     return time >= 13000 and time < 23000
 end
 
@@ -209,6 +212,14 @@ local function evaluateDefenseConditions()
     return false, "All clear"
 end
 
+-- Helper to format Minecraft time as HH:MM
+local function formatMcTime(t)
+    -- t is 0-23999, 0 = 6:00, 6000 = 12:00, 18000 = 0:00
+    local hours = math.floor((t + 6000) / 1000) % 24
+    local mins = math.floor(((t % 1000) / 1000) * 60)
+    return string.format("%02d:%02d", hours, mins)
+end
+
 -- Main monitoring loop
 print("[INFO] MFFS Defense monitoring active...")
 print("")
@@ -235,14 +246,21 @@ while true do
     end
     
     -- Status display
+    local mcTime = (envDetector and envDetector.getTime and envDetector.getTime()) or os.time()
+    local mcTimeStr = formatMcTime(mcTime)
     local statusColor = defensesActive and "[ACTIVE]" or "[STANDBY]"
     local powerStatus = latestEnergyData.percentFull >= MIN_POWER_PERCENT and "ON" or "OFF"
-    print(string.format("%s Power: %.1f%% | Infrastructure: %s | Night: %s | Projectors: %s", 
+    print(string.format("%s Power: %.1f%% | Time: %s | Infrastructure: %s | Night: %s | Projectors: %s", 
         statusColor,
         latestEnergyData.percentFull,
+        mcTimeStr,
         powerStatus,
         isNighttime() and "YES" or "NO",
         defensesActive and "ON" or "OFF"))
     
-    sleep(CHECK_INTERVAL)
+    -- Use timer event to ensure os.time() advances
+    local timer = os.startTimer(CHECK_INTERVAL)
+    repeat
+        local event, id = os.pullEventRaw()
+    until event == "timer" and id == timer
 end
