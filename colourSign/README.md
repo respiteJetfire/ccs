@@ -12,6 +12,7 @@ Usage
 1. Place a computer with a monitor attached.
 2. Drop the `colourSign` folder into the CC scripts folder.
 3. Run `shell.run("colourSign/startup.lua")` or add it to your startup.
+   - To force the configuration wizard again: `shell.run("colourSign/manager.lua", "--wizard")`
 
 Remote Commands (send via rednet on protocol `colourSign`):
 - `{ action = "set_color", color = "blue" }` - set single colour
@@ -22,5 +23,7 @@ Remote Commands (send via rednet on protocol `colourSign`):
 - `{ action = "set_cycle_interval", interval = 3 }` - set seconds between cycles
 
 Configuration
-- Modify `colourSign/config.lua` to set defaults.
+- On first run a configuration wizard will guide you through options and create `colourSign/config.json`.
+- To re-run the wizard, delete `colourSign/config.json` and start the program again.
+- You can also edit `colourSign/config.json` directly (JSON) to change defaults.
 

@@ -1,6 +1,6 @@
 -- updater.lua
 -- Auto-updater for the colourSign module
-local version = "0.1.0"
+local version = "0.1.1"
 local REPO_BASE = "https://github.com/respiteJetfire/ccs/blob/main/"
 
 print("[INFO] colourSign Updater v" .. version .. " starting...")
@@ -44,7 +44,8 @@ local function updateScripts()
     local filesToUpdate = {
         {remote = "colourSign/manager.lua", local_ = "colourSign/manager.lua"},
         {remote = "colourSign/sign_renderer.lua", local_ = "colourSign/sign_renderer.lua"},
-        {remote = "colourSign/config.lua", local_ = "colourSign/config.lua"},
+        {remote = "colourSign/config.json", local_ = "colourSign/config.json"},
+        {remote = "colourSign/README.md", local_ = "colourSign/README.md"},
         -- Copy startup/updater to root so users can run them easily
         {remote = "colourSign/startup.lua", local_ = "startup.lua"},
         {remote = "colourSign/updater.lua", local_ = "updater.lua"}
