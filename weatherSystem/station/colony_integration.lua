@@ -1,7 +1,7 @@
 -- weatherSystem/station/colony_integration.lua
 -- Colony Integrator Module for Advanced Peripherals colonyIntegrator
 -- API Reference: https://docs.advanced-peripherals.de/latest/peripherals/colony_integrator/
-local version = "1.2.0"
+local version = "1.3.0"
 
 local colony = {}
 
@@ -12,10 +12,13 @@ local lastUpdate = 0
 local dataCache = nil
 local cfg = {
     UPDATE_INTERVAL = 30,
-    COLLECT_CITIZENS = true,
+    -- NOTE: getCitizens() and getResearch() are DISABLED due to server crashes
+    -- caused by Advanced Peripherals/MineColonies mod incompatibility
+    -- (ClassCastException in skillsToObject, NoClassDefFoundError for IResearchEffect)
+    COLLECT_CITIZENS = false,  -- CRASHES SERVER - DO NOT ENABLE
     COLLECT_BUILDINGS = true,
     COLLECT_REQUESTS = true,
-    COLLECT_RESEARCH = true,
+    COLLECT_RESEARCH = false,  -- CRASHES SERVER - DO NOT ENABLE
     MAX_CITIZENS_DISPLAY = 15,
     MAX_REQUESTS_DISPLAY = 10
 }
@@ -158,15 +161,18 @@ function colony.update()
         if constructionSites then newData.summary.constructionSites = constructionSites end
         
         -- Citizens list
-        if cfg.COLLECT_CITIZENS then
-            local citizens = safeCall("getCitizens")
-            if citizens and type(citizens) == "table" then
-                local maxC = tonumber(cfg.MAX_CITIZENS_DISPLAY) or 15
-                for i = 1, math.min(#citizens, maxC) do
-                    table.insert(newData.citizens, citizens[i])
-                end
-            end
-        end
+        -- WARNING: getCitizens() crashes server due to Advanced Peripherals bug
+        -- (ClassCastException: CitizenSkillHandler$SkillData cannot be cast to Tuple)
+        -- Disabled until mod is updated. Using amountOfCitizens() for count instead.
+        -- if cfg.COLLECT_CITIZENS then
+        --     local citizens = safeCall("getCitizens")
+        --     if citizens and type(citizens) == "table" then
+        --         local maxC = tonumber(cfg.MAX_CITIZENS_DISPLAY) or 15
+        --         for i = 1, math.min(#citizens, maxC) do
+        --             table.insert(newData.citizens, citizens[i])
+        --         end
+        --     end
+        -- end
 
         -- Buildings list
         if cfg.COLLECT_BUILDINGS then
@@ -189,12 +195,15 @@ function colony.update()
         end
 
         -- Research tree
-        if cfg.COLLECT_RESEARCH then
-            local research = safeCall("getResearch")
-            if research and type(research) == "table" then
-                newData.research = research
-            end
-        end
+        -- WARNING: getResearch() crashes server due to Advanced Peripherals bug
+        -- (NoClassDefFoundError: com/minecolonies/api/research/effects/IResearchEffect)
+        -- Disabled until mod is updated.
+        -- if cfg.COLLECT_RESEARCH then
+        --     local research = safeCall("getResearch")
+        --     if research and type(research) == "table" then
+        --         newData.research = research
+        --     end
+        -- end
     end)
 
     if not ok then
