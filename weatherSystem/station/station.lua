@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
 -- Weather Station v6.3.9 - Improved XL cloud designs
 -- Master handles all forecasting - station registers and displays
-local version = "8.0.1"
+local version = "8.1.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -100,7 +100,7 @@ local localBiomeData = {
 
 -- Display state
 local currentPage = "current"
-local pageList = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+local pageList = {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
 local currentPageIndex = 1
 local otherStationIndex = 0  -- Index for cycling through other stations
 local cachedOtherStation = nil  -- Cached other station for "other" pages
@@ -115,6 +115,9 @@ local cyclePages = {}
 local colonyModule = nil
 local colonyData = nil
 local colonyAvailable = false
+
+-- Mob radar state
+local localMobData = nil
 
 -- Detect biome data
 local function detectBiomeData()
@@ -172,7 +175,8 @@ local function sendHeartbeat()
         biome = localBiomeData.biome,
         dimension = localBiomeData.dimension,
         altitude = localBiomeData.altitude,
-        position = localBiomeData.position
+        position = localBiomeData.position,
+        mobData = localMobData
     }
     rednet.broadcast(packet, STATION_PROTOCOL)
 end
@@ -202,7 +206,8 @@ local function processForecast(data)
             hourly = data.hourly or {},
             fiveDay = data.fiveDay or {},
             stationForecasts = data.stationForecasts or {},
-            stations = data.stations or {}
+            stations = data.stations or {},
+            stationMobs = data.stationMobs or {}
         }
         
         -- Update station list
@@ -279,9 +284,9 @@ end
 local getActivePageList
 getActivePageList = function()
     if #allStations > 1 then
-        return {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+        return {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
     else
-        return {"current", "hourly", "fiveday", "overview"}
+        return {"current", "hourly", "fiveday", "overview", "mobradar"}
     end
 end
 
@@ -339,7 +344,7 @@ local function recomputePageAssignments()
     -- Ensure cached other station exists if any page needs it
     for i = 1, #monitors do
         local page = (i == cycleMonitorIndex) and currentPage or fixedPagesByMonitor[i]
-        if page == "other5day" or page == "othercurrent" then
+        if page == "other5day" or page == "othercurrent" or page == "othermob" then
             if not cachedOtherStation then
                 selectNextOtherStation()
             end
@@ -428,7 +433,7 @@ local function displayLoop()
                         pageForMonitor = fixedPagesByMonitor[i] or currentPage
                     end
                 end
-                r.renderPage(displayForecast, allStations, pageForMonitor, localIdx, cachedOtherStation, cachedOtherForecast, colonyData)
+                r.renderPage(displayForecast, allStations, pageForMonitor, localIdx, cachedOtherStation, cachedOtherForecast, colonyData, localMobData, currentForecast.stationMobs)
             end
             
             -- Advance animation frame
@@ -470,7 +475,7 @@ local function cycleLoop()
             lastPageChange = now
             
             -- Select a new other station when entering "other" pages
-            if currentPage == "other5day" or currentPage == "othercurrent" then
+            if currentPage == "other5day" or currentPage == "othercurrent" or currentPage == "othermob" then
                 selectNextOtherStation()
             end
         end
@@ -540,9 +545,9 @@ end
 getActivePageList = function()
     local base = {}
     if #allStations > 1 then
-        base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+        base = {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
     else
-        base = {"current", "hourly", "fiveday", "overview"}
+        base = {"current", "hourly", "fiveday", "overview", "mobradar"}
     end
 
     if colonyAvailable and config.COLONY and config.COLONY.SHOW_PAGES then
@@ -561,6 +566,109 @@ getActivePageList = function()
     end
 
     return base
+end
+
+-- Mob scanning helpers
+local hostileMobKeywords = {
+    "zombie", "skeleton", "creeper", "spider", "enderman", "witch", "slime",
+    "phantom", "pillager", "vindicator", "evoker", "ravager", "drowned",
+    "husk", "stray", "piglin", "piglin brute", "hoglin", "ghast",
+    "blaze", "magma cube", "silverfish", "shulker", "guardian", "elder guardian"
+}
+
+local function isHostileMob(name)
+    if not name then return false end
+    local lower = tostring(name):lower()
+    for _, key in ipairs(hostileMobKeywords) do
+        if lower:find(key) then
+            return true
+        end
+    end
+    return false
+end
+
+local function buildMobData()
+    if not (config.MOBS and config.MOBS.ENABLED) then return nil end
+    if not envDetector or not envDetector.scanEntities then return nil end
+
+    detectBiomeData()
+    local range = config.MOBS.RANGE or 24
+    local ok, entities = pcall(envDetector.scanEntities, range)
+    if not ok or type(entities) ~= "table" then
+        return {
+            timestamp = os.epoch("utc"),
+            range = range,
+            total = 0,
+            hostiles = 0,
+            mobs = {},
+            error = tostring(entities)
+        }
+    end
+
+    local origin = localBiomeData.position or {x = 0, y = 64, z = 0}
+    local mobs = {}
+    local total = 0
+    local hostiles = 0
+
+    for _, entity in ipairs(entities) do
+        local name = entity.name or entity.displayName or "Mob"
+        local hostile = isHostileMob(name)
+        if (not config.MOBS.HOSTILE_ONLY) or hostile then
+            total = total + 1
+            if hostile then hostiles = hostiles + 1 end
+
+            local dx, dy, dz, dist
+            if entity.x and entity.y and entity.z then
+                dx = entity.x - origin.x
+                dy = entity.y - origin.y
+                dz = entity.z - origin.z
+                dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+            elseif entity.distance then
+                dist = entity.distance
+            end
+
+            table.insert(mobs, {
+                name = name,
+                dx = dx and math.floor(dx) or nil,
+                dy = dy and math.floor(dy) or nil,
+                dz = dz and math.floor(dz) or nil,
+                distance = dist and math.floor(dist + 0.5) or nil,
+                hostile = hostile
+            })
+        end
+    end
+
+    table.sort(mobs, function(a, b)
+        local da = a.distance or 9999
+        local db = b.distance or 9999
+        return da < db
+    end)
+
+    local maxDisplay = (config.MOBS and config.MOBS.MAX_DISPLAY) or 10
+    local trimmed = {}
+    for i = 1, math.min(#mobs, maxDisplay) do
+        trimmed[i] = mobs[i]
+    end
+
+    return {
+        timestamp = os.epoch("utc"),
+        range = range,
+        total = total,
+        hostiles = hostiles,
+        mobs = trimmed
+    }
+end
+
+-- Mob radar update loop
+local function mobScanLoop()
+    while true do
+        if config.MOBS and config.MOBS.ENABLED and envDetector and envDetector.scanEntities then
+            localMobData = buildMobData()
+        else
+            localMobData = nil
+        end
+        sleep((config.MOBS and config.MOBS.SCAN_INTERVAL) or 10)
+    end
 end
 
 if monitor and multiMonitor then
@@ -585,9 +693,9 @@ local function colonyLoop()
 end
 
 if monitor then
-    parallel.waitForAny(heartbeatLoop, receiveLoop, displayLoop, cycleLoop, inputLoop, colonyLoop)
+    parallel.waitForAny(heartbeatLoop, receiveLoop, displayLoop, cycleLoop, inputLoop, colonyLoop, mobScanLoop)
 else
-    parallel.waitForAny(heartbeatLoop, receiveLoop, inputLoop, colonyLoop)
+    parallel.waitForAny(heartbeatLoop, receiveLoop, inputLoop, colonyLoop, mobScanLoop)
 end
 
 rednet.close(modemSide)

@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
 -- UI Renderer v6.3.9 - Improved XL cloud designs
-local version = "6.5.0"
+local version = "7.0.0"
 
 local renderer = {}
 
@@ -231,6 +231,72 @@ local function renderColonyPage(page, colonyData)
         renderer.drawColonyBuildingsPage(colonyData)
     elseif page == "colony_requests" then
         renderer.drawColonyRequestsPage(colonyData)
+    end
+end
+
+-- Mob radar helpers
+local function getDirection(dx, dz)
+    if dx == nil or dz == nil then return "?" end
+    local dir = ""
+    if dz < -1 then dir = dir .. "N" elseif dz > 1 then dir = dir .. "S" end
+    if dx > 1 then dir = dir .. "E" elseif dx < -1 then dir = dir .. "W" end
+    if dir == "" then dir = "-" end
+    return dir
+end
+
+local function trimName(name, maxLen)
+    if not name then return "Mob" end
+    if #name <= maxLen then return name end
+    return name:sub(1, maxLen - 2) .. ".."
+end
+
+function renderer.drawMobRadarPage(mobData)
+    local adaptiveColors = getAdaptiveColors()
+    local bgColor = getBackgroundColor()
+
+    renderer.drawText(2, 3, "Mob Radar", adaptiveColors.textHighlight, bgColor)
+    renderer.drawLine(4, "-", adaptiveColors.textSecondary, bgColor)
+
+    if not mobData or not mobData.mobs then
+        renderer.drawCenteredText(10, "No mob data", colors.orange)
+        return
+    end
+
+    local total = mobData.total or 0
+    local hostiles = mobData.hostiles or 0
+    local range = mobData.range or 0
+    local ageSec = 0
+    if mobData.timestamp then
+        ageSec = math.floor((os.epoch("utc") - mobData.timestamp) / 1000)
+    end
+
+    renderer.drawText(2, 5, "Hostiles: " .. tostring(hostiles) .. " / " .. tostring(total),
+        hostiles > 0 and colors.red or adaptiveColors.textSecondary, bgColor)
+    renderer.drawText(2, 6, "Range: " .. tostring(range) .. "  Last: " .. tostring(ageSec) .. "s",
+        adaptiveColors.textSecondary, bgColor)
+
+    local y = 8
+    local maxRows = monitorHeight - y - 1
+    local mobs = mobData.mobs or {}
+
+    if #mobs == 0 then
+        renderer.drawCenteredText(11, "No mobs detected", colors.lime)
+        return
+    end
+
+    for i = 1, math.min(#mobs, maxRows) do
+        local mob = mobs[i]
+        local name = trimName(mob.name or "Mob", 18)
+        local dist = mob.distance and (tostring(mob.distance) .. "m") or "?m"
+        local dir = getDirection(mob.dx, mob.dz)
+        local marker = mob.hostile and "!" or ""
+        local color = mob.hostile and colors.red or adaptiveColors.textPrimary
+        renderer.drawText(2, y, string.format("%s %s %s%s", name, dist, dir, marker), color, bgColor)
+        y = y + 1
+    end
+
+    if #mobs > maxRows then
+        renderer.drawText(2, monitorHeight - 1, "+" .. tostring(#mobs - maxRows) .. " more...", adaptiveColors.textSecondary, bgColor)
     end
 end
 
@@ -959,15 +1025,15 @@ function renderer.drawOtherStation5Day(forecast, station, stationForecast)
 end
 
 -- Render specific page
-function renderer.renderPage(forecast, stations, page, stationIndex, otherStation, otherStationForecast, colonyData)
+function renderer.renderPage(forecast, stations, page, stationIndex, otherStation, otherStationForecast, colonyData, mobData, stationMobs)
     renderer.clear()
 
     -- Build page order dynamically (accounts for other stations and optional colony pages)
     local base = {}
     if stations and #stations > 1 then
-        base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+        base = {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
     else
-        base = {"current", "hourly", "fiveday", "overview"}
+        base = {"current", "hourly", "fiveday", "overview", "mobradar"}
     end
 
     local includeColony = false
@@ -987,7 +1053,7 @@ function renderer.renderPage(forecast, stations, page, stationIndex, otherStatio
     -- Map page to human-friendly indicator
     local pageNames = {}
     for i, v in ipairs(pageOrder) do
-        local short = v == "current" and "Now" or (v == "hourly" and "24hr") or (v == "fiveday" and "5day") or (v == "overview" and "All") or (v == "other5day" and "Other") or (v == "othercurrent" and "Other") or (v:match("colony_") and v:gsub("colony_", "Col ")) or v
+        local short = v == "current" and "Now" or (v == "hourly" and "24hr") or (v == "fiveday" and "5day") or (v == "overview" and "All") or (v == "mobradar" and "Radar") or (v == "other5day" and "Other") or (v == "othercurrent" and "Other") or (v == "othermob" and "Other") or (v:match("colony_") and v:gsub("colony_", "Col ")) or v
         pageNames[v] = tostring(i) .. "/" .. tostring(#pageOrder) .. " " .. short
     end
 
@@ -1014,10 +1080,15 @@ function renderer.renderPage(forecast, stations, page, stationIndex, otherStatio
         renderer.draw5DayPage(forecast)
     elseif page == "overview" then
         renderer.drawOverviewPage(forecast, stations, stationIndex)
+    elseif page == "mobradar" then
+        renderer.drawMobRadarPage(mobData)
     elseif page == "other5day" and otherStation and otherStationForecast then
         renderer.drawOtherStation5Day(forecast, otherStation, otherStationForecast)
     elseif page == "othercurrent" and otherStation and otherStationForecast then
         renderer.drawOtherStationCurrent(forecast, otherStation, otherStationForecast)
+    elseif page == "othermob" and otherStation and stationMobs then
+        local otherId = tostring(otherStation.id)
+        renderer.drawMobRadarPage(stationMobs[otherId])
     elseif page:sub(1,7) == "colony_" then
         renderColonyPage(page, colonyData)
     else

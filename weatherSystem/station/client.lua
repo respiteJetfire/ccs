@@ -1,7 +1,7 @@
 -- weatherSystem/station/client.lua
 -- Weather Client v1.1.0 - Display-only, no registration
 -- Shows weather forecasts from other stations without registering as a station
-local version = "1.2.0"
+local version = "1.3.0"
 
 print("[INFO] Weather Client v" .. version .. " starting...")
 
@@ -161,7 +161,8 @@ local function processForecast(data)
             hourly = data.hourly or {},
             fiveDay = data.fiveDay or {},
             stationForecasts = data.stationForecasts or {},
-            stations = data.stations or {}
+            stations = data.stations or {},
+            stationMobs = data.stationMobs or {}
         }
         
         -- Update station list
@@ -223,9 +224,9 @@ end
 -- Get active page list based on station count
 local function getActivePageList()
     if #allStations > 1 then
-        return {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
+        return {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
     else
-        return {"current", "hourly", "fiveday", "overview"}
+        return {"current", "hourly", "fiveday", "overview", "mobradar"}
     end
 end
 
@@ -296,7 +297,8 @@ local function displayLoop()
             }
             
             -- Render page - use cached station for all pages (client views other stations)
-            renderer.renderPage(displayForecast, allStations, currentPage, currentStationIndex, cachedStation, cachedStationForecast, nil)
+            local mobData = currentForecast.stationMobs and currentForecast.stationMobs[stationId]
+            renderer.renderPage(displayForecast, allStations, currentPage, currentStationIndex, cachedStation, cachedStationForecast, nil, mobData, currentForecast.stationMobs)
             
             -- Advance animation frame
             assets.nextFrame()

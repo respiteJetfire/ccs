@@ -1,6 +1,6 @@
 -- weatherSystem/station/config.lua
 -- Configuration for Weather Station with Integrated Display
-local version = "7.0.1"
+local version = "7.1.0"
 
 local config = {
     -- Station identification
@@ -24,6 +24,15 @@ local config = {
         PAGE_CYCLE_TIME = 8,        -- Seconds per page when cycling
         TEXT_SCALE = 0.5,           -- Monitor text scale
         BACKGROUND_COLOR = nil      -- Custom background color (nil = default black)
+    },
+
+    -- Mob radar settings (requires environmentDetector)
+    MOBS = {
+        ENABLED = true,
+        SCAN_INTERVAL = 10,         -- Seconds between mob scans
+        RANGE = 24,                 -- Scan radius in blocks
+        HOSTILE_ONLY = true,        -- Only show hostile mobs
+        MAX_DISPLAY = 10            -- Max mobs to display/send
     },
     
     -- Sensor settings
@@ -270,7 +279,8 @@ function config.save()
             SEND_INTERVAL = config.SEND_INTERVAL,
             LOCATION = config.LOCATION,
             DISPLAY = config.DISPLAY,
-            COLONY = config.COLONY
+            COLONY = config.COLONY,
+            MOBS = config.MOBS
         }
         file.write(textutils.serialiseJSON(saveData))
         file.close()

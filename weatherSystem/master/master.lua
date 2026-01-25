@@ -2,7 +2,7 @@
 -- Weather Master Controller v5.0.0
 -- Master controls ALL forecasting - stations just register biome/position and display
 -- Global weather with biome-specific display (rain = snow in cold biomes)
-local version = "5.1.0"
+local version = "5.2.0"
 
 
 print("[INFO] Weather Master v" .. version .. " starting...")
@@ -77,7 +77,8 @@ local function getActiveStations()
                 dimension = station.dimension,
                 altitude = station.altitude,
                 position = station.position,
-                lastSeen = station.lastSeen
+                lastSeen = station.lastSeen,
+                mobData = station.mobData
             })
         end
     end
@@ -100,7 +101,8 @@ local function processStationPacket(senderId, packet)
             dimension = packet.dimension or "minecraft:overworld",
             altitude = packet.altitude or 64,
             position = packet.position,
-            lastSeen = os.epoch("utc")
+            lastSeen = os.epoch("utc"),
+            mobData = packet.mobData
         }
         
         stations[stationId] = stationData
@@ -124,6 +126,7 @@ local function processStationPacket(senderId, packet)
             if packet.dimension then stations[stationId].dimension = packet.dimension end
             if packet.altitude then stations[stationId].altitude = packet.altitude end
             if packet.position then stations[stationId].position = packet.position end
+            if packet.mobData then stations[stationId].mobData = packet.mobData end
             
             -- Update forecast module
             forecast.updateStation(stationId, {
@@ -156,8 +159,9 @@ function sendForecastToStation(computerId, stationId)
     local stationForecast = currentForecast.stationForecasts and 
                             currentForecast.stationForecasts[strId]
     
-    -- Build station list from active stations
+    -- Build station list and mob data from active stations
     local stationList = {}
+    local stationMobs = {}
     for id, station in pairs(stations) do
         if isStationActive(station) then
             table.insert(stationList, {
@@ -165,6 +169,9 @@ function sendForecastToStation(computerId, stationId)
                 name = station.name,
                 biome = station.biome
             })
+            if station.mobData then
+                stationMobs[tostring(id)] = station.mobData
+            end
         end
     end
     
@@ -185,7 +192,8 @@ function sendForecastToStation(computerId, stationId)
         fiveDay = stationForecast and stationForecast.fiveDay or {},
         -- Full data for overview/cycling
         stations = stationList,
-        stationForecasts = currentForecast.stationForecasts or {}
+        stationForecasts = currentForecast.stationForecasts or {},
+        stationMobs = stationMobs
     }
     
     network.send(computerId, response, network.STATION_PROTOCOL)
@@ -262,6 +270,41 @@ local function weatherControlLoop()
     print("[WEATHER] Weather control loop started")
 
     local lastEnvTime = nil
+
+    local function getActiveDimensions()
+        local dims = {}
+        local seen = {}
+        for id, station in pairs(stations) do
+            if isStationActive(station) and station.dimension then
+                local dim = station.dimension
+                if dim and not seen[dim] then
+                    seen[dim] = true
+                    table.insert(dims, dim)
+                end
+            end
+        end
+        if #dims == 0 then
+            table.insert(dims, "minecraft:overworld")
+        end
+        return dims
+    end
+
+    local function execWeatherAllDimensions(mode, duration)
+        local dims = getActiveDimensions()
+        for _, dim in ipairs(dims) do
+            local command = "weather " .. mode .. " " .. tostring(duration)
+            if dim and dim ~= "minecraft:overworld" then
+                command = "execute in " .. dim .. " run " .. command
+            end
+            pcall(function()
+                if commands.async and commands.async.exec then
+                    commands.async.exec(command)
+                else
+                    commands.exec(command)
+                end
+            end)
+        end
+    end
     while true do
         local envTime, envDay, isRaining, isThundering
         if envDetector then
@@ -290,22 +333,26 @@ local function weatherControlLoop()
             if envDetector and isRaining ~= nil and isThundering ~= nil then
                 -- Set weather to match real world
                 if isThundering then
-                    commands.exec("weather thunder 1000")
+                    execWeatherAllDimensions("thunder", 1000)
+                    forecast.syncWeather(true, true)
                     print("[WEATHER] Forced thunder (real world)")
                 elseif isRaining then
-                    commands.exec("weather rain 1000")
+                    execWeatherAllDimensions("rain", 1000)
+                    forecast.syncWeather(true, false)
                     print("[WEATHER] Forced rain (real world)")
                 else
-                    commands.exec("weather clear 1000")
+                    execWeatherAllDimensions("clear", 1000)
+                    forecast.syncWeather(false, false)
                     print("[WEATHER] Forced clear (real world)")
                 end
             else
                 -- Fallback: use forecast
                 local currentTick = os.time() * 1000
                 local gameDay = os.day()
-                local result = forecast.applyWeather(currentTick, gameDay)
-                if result and result.changed then
-                    print("[WEATHER] Changed: " .. (result.command or ""))
+                local result = forecast.computeWeather(currentTick, gameDay)
+                if result and result.changed and result.mode then
+                    execWeatherAllDimensions(result.mode, result.duration)
+                    print("[WEATHER] Changed: " .. result.mode)
                 end
             end
         end

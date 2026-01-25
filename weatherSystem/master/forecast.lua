@@ -2,7 +2,7 @@
 -- Weather Forecast Engine v6.0.0
 -- 120-day deterministic forecast with realistic weather patterns
 -- Storm systems, fronts, and biome-specific conditions
-local version = "6.0.1"
+local version = "6.1.0"
 
 local forecast = {}
 
@@ -525,8 +525,8 @@ function forecast.generate5Day(stationId, gameDay)
     return forecasts
 end
 
--- Apply weather using commands API
-function forecast.applyWeather(currentTick, gameDay)
+-- Compute weather change without applying commands
+function forecast.computeWeather(currentTick, gameDay)
     local currentHour = math.floor((os.time() * 1000) / forecast.TICKS_PER_HOUR) % 24
     
     -- Only check once per hour
@@ -555,31 +555,32 @@ function forecast.applyWeather(currentTick, gameDay)
     end
     local duration = durationHours * 1000
     
-    local command = nil
-    local changed = false
-    
-    if weather.isThundering and not globalWeatherState.isThundering then
-        command = "weather thunder " .. duration
-        globalWeatherState.isRaining = true
-        globalWeatherState.isThundering = true
-        changed = true
-    elseif weather.isRaining and not globalWeatherState.isRaining then
-        command = "weather rain " .. duration
-        globalWeatherState.isRaining = true
-        globalWeatherState.isThundering = false
-        changed = true
-    elseif not weather.isRaining and globalWeatherState.isRaining then
-        command = "weather clear " .. duration
-        globalWeatherState.isRaining = false
-        globalWeatherState.isThundering = false
-        changed = true
-    elseif globalWeatherState.isThundering and not weather.isThundering and weather.isRaining then
-        command = "weather rain " .. duration
-        globalWeatherState.isThundering = false
-        changed = true
-    end
-    
-    if command and commands then
+    local desiredRain = weather.isRaining
+    local desiredThunder = weather.isThundering
+    local changed = (desiredRain ~= globalWeatherState.isRaining) or (desiredThunder ~= globalWeatherState.isThundering)
+    local mode = desiredThunder and "thunder" or (desiredRain and "rain" or "clear")
+
+    globalWeatherState.isRaining = desiredRain
+    globalWeatherState.isThundering = desiredThunder
+    globalWeatherState.plannedDuration = duration
+
+    return {
+        changed = changed,
+        mode = mode,
+        duration = duration,
+        isRaining = desiredRain,
+        isThundering = desiredThunder,
+        rainChance = weather.rainChance
+    }
+end
+
+-- Apply weather using commands API (single-dimension)
+function forecast.applyWeather(currentTick, gameDay)
+    local result = forecast.computeWeather(currentTick, gameDay)
+    if not result then return nil end
+
+    if result.changed and commands then
+        local command = "weather " .. result.mode .. " " .. tostring(result.duration)
         local ok, success = pcall(function()
             -- Use async execution to suppress chat output to operators
             if commands.async and commands.async.exec then
@@ -591,17 +592,10 @@ function forecast.applyWeather(currentTick, gameDay)
         if ok and success then
             -- Silent execution (no logging or feedback)
         end
+        result.command = command
     end
-    
-    globalWeatherState.plannedDuration = duration
-    
-    return {
-        changed = changed,
-        command = command,
-        isRaining = globalWeatherState.isRaining,
-        isThundering = globalWeatherState.isThundering,
-        rainChance = weather.rainChance
-    }
+
+    return result
 end
 
 -- Get global weather state
