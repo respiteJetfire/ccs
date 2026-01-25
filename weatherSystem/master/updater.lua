@@ -26,6 +26,20 @@ local function downloadFile(remotePath, localPath)
     end
 end
 
+-- function to compare file contents
+local function filesMatch(path1, path2)
+    if not fs.exists(path1) or not fs.exists(path2) then
+        return false
+    end
+    local file1 = fs.open(path1, "r")
+    local file2 = fs.open(path2, "r")
+    local content1 = file1.readAll()
+    local content2 = file2.readAll()
+    file1.close()
+    file2.close()
+    return content1 == content2
+end
+
 local function updateScripts()
     local filesToUpdate = {
         {remote = "weatherSystem/master/startup.lua", local_ = "startup.lua"},
@@ -37,16 +51,23 @@ local function updateScripts()
     }
 
     local success = 0
+    local skipped = 0
     local failed = 0
 
     for _, file in ipairs(filesToUpdate) do
         local tempPath = file.local_ .. ".tmp"
         if downloadFile(file.remote, tempPath) then
-            if fs.exists(file.local_) then
-                fs.delete(file.local_)
+            if filesMatch(tempPath, file.local_) then
+                print("[SKIP] No changes: " .. file.local_)
+                fs.delete(tempPath)
+                skipped = skipped + 1
+            else
+                if fs.exists(file.local_) then
+                    fs.delete(file.local_)
+                end
+                fs.move(tempPath, file.local_)
+                success = success + 1
             end
-            fs.move(tempPath, file.local_)
-            success = success + 1
         else
             if fs.exists(tempPath) then
                 fs.delete(tempPath)
@@ -55,7 +76,7 @@ local function updateScripts()
         end
     end
 
-    print("[INFO] Update complete: " .. success .. " succeeded, " .. failed .. " failed")
+    print("[INFO] Update complete: " .. success .. " updated, " .. skipped .. " skipped, " .. failed .. " failed")
 end
 
 updateScripts()
