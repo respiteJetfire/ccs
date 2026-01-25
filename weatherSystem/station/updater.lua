@@ -1,15 +1,15 @@
 -- updater.lua
 -- Computer Craft Script Updater for Weather Station
-local version = "1.1.0"
+local version = "1.2.0"
 print("[INFO] Weather Station Updater v" .. version .. " starting...")
 
 -- Parse command line arguments
 local args = {...}
-local headlessMode = false
+local clientMode = false
 for _, arg in ipairs(args) do
-    if arg == "--headless" or arg == "-h" then
-        headlessMode = true
-        print("[INFO] Headless mode installation selected")
+    if arg == "--client" or arg == "-c" then
+        clientMode = true
+        print("[INFO] Client mode installation selected")
     end
 end
 
@@ -39,17 +39,20 @@ end
 local function updateScripts()
     local filesToUpdate = {}
     
-    if headlessMode then
-        -- Headless mode - minimal files
+    if clientMode then
+        -- Client mode - display only, no registration
         filesToUpdate = {
-            {remote = "weatherSystem/station/headless_startup.lua", local_ = "startup.lua"},
+            {remote = "weatherSystem/station/client_startup.lua", local_ = "startup.lua"},
             {remote = "weatherSystem/station/updater.lua", local_ = "updater.lua"},
-            {remote = "weatherSystem/station/headless.lua", local_ = "weatherSystem/station/headless.lua"},
-            {remote = "weatherSystem/station/headless_example.lua", local_ = "weatherSystem/station/headless_example.lua"},
+            {remote = "weatherSystem/station/client.lua", local_ = "weatherSystem/station/client.lua"},
+            {remote = "weatherSystem/station/config.lua", local_ = "weatherSystem/station/config.lua"},
+            {remote = "weatherSystem/station/ui_assets.lua", local_ = "weatherSystem/station/ui_assets.lua"},
+            {remote = "weatherSystem/station/ui_renderer.lua", local_ = "weatherSystem/station/ui_renderer.lua"},
+            {remote = "weatherSystem/station/colony_integration.lua", local_ = "weatherSystem/station/colony_integration.lua"},
         }
-        print("[INFO] Installing headless weather station (receive-only, no registration)")
+        print("[INFO] Installing weather client (display-only, no registration)")
     else
-        -- Standard mode - full station with display
+        -- Standard mode - full station with display and registration
         filesToUpdate = {
             {remote = "weatherSystem/station/startup.lua", local_ = "startup.lua"},
             {remote = "weatherSystem/station/updater.lua", local_ = "updater.lua"},
@@ -83,19 +86,19 @@ local function updateScripts()
 
     print("[INFO] Update complete: " .. success .. " succeeded, " .. failed .. " failed")
     
-    if headlessMode then
-        print("[INFO] Headless station installed!")
-        print("[INFO] - No monitor required")
+    if clientMode then
+        print("[INFO] Weather client installed!")
+        print("[INFO] - Full display with monitor")
         print("[INFO] - No registration with master")
-        print("[INFO] - Passively listens to broadcasts")
-        print("[INFO] Run 'headless_example.lua' to see integration examples")
+        print("[INFO] - Views forecasts from other stations")
+        print("[INFO] - Keys: Q=quit, N/P=page, S=station, C=color")
     end
 end
 
 print("")
-print("Usage: updater [--headless|-h]")
-print("  --headless : Install headless station (no monitor, receive-only)")
-print("  (default)  : Install standard station (with display)")
+print("Usage: updater [--client|-c]")
+print("  --client : Install client (display-only, no registration)")
+print("  (default): Install standard station (with registration)")
 print("")
 
 updateScripts()
