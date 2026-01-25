@@ -6,22 +6,30 @@ local CHECK_INTERVAL = 5  -- seconds between broadcasts
 print("[INFO] Energy Master v" .. version .. " starting...")
 print("[INFO] Check interval: " .. tostring(CHECK_INTERVAL) .. "s")
 
--- Find and open wireless modem
-print("[INFO] Searching for available modem...")
-local modemSide = nil
+-- Find and open wireless modem for broadcasting
+print("[INFO] Searching for wireless modem for broadcasting...")
+local wirelessModemSide = nil
 for _, side in ipairs(peripheral.getNames()) do
     if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        modemSide = side
+        wirelessModemSide = side
         break
     end
 end
-if not modemSide then
-    error("[ERROR] No wireless modem found! Please attach a modem.")
+if not wirelessModemSide then
+    error("[ERROR] No wireless modem found! Please attach an ender modem for broadcasting.")
 end
-print("[INFO] Opening rednet on " .. modemSide .. "...")
-rednet.open(modemSide)
+print("[INFO] Opening rednet on " .. wirelessModemSide .. " for broadcasting...")
+rednet.open(wirelessModemSide)
 
--- Find all energy storage peripherals
+-- Find all wired modems for peripheral network
+print("[INFO] Searching for wired modems...")
+for _, side in ipairs(peripheral.getNames()) do
+    if peripheral.getType(side) == "modem" and not peripheral.call(side, "isWireless") then
+        print("[INFO] Found wired modem on " .. side)
+    end
+end
+
+-- Find all energy storage peripherals (connected via wired modem network)
 print("[INFO] Searching for energy storage peripherals...")
 local energyDevices = {}
 for _, name in ipairs(peripheral.getNames()) do
