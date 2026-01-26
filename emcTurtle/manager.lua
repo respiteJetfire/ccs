@@ -1,5 +1,5 @@
 -- CC Turtle script to monitor EMC and control pink collector placement
-local version = "0.1.0"
+local version = "0.1.1"
 local CHECK_INTERVAL = 2  -- seconds between checks
 
 print("[INFO] EMC Turtle v" .. version .. " starting...")
@@ -111,14 +111,36 @@ end
 local function removeCollector()
     if isCollectorBelow() then
         print("[ACTION] Removing collector (EMC above cap)")
+        
+        -- Try digging first
         if turtle.digDown() then
             collectorPlaced = false
             lastAction = "removed"
+            print("[SUCCESS] Collector removed by digging")
             return true
-        else
-            print("[ERROR] Failed to remove collector!")
-            return false
         end
+        
+        -- Digging failed - try command if available
+        print("[WARN] turtle.digDown() failed, trying commands...")
+        if commands then
+            local success, result = pcall(function()
+                return commands.exec("setblock ~ ~-1 ~ minecraft:air")
+            end)
+            if success then
+                collectorPlaced = false
+                lastAction = "removed"
+                print("[SUCCESS] Collector removed by command")
+                return true
+            else
+                print("[ERROR] Command failed: " .. tostring(result))
+            end
+        end
+        
+        print("[ERROR] Failed to remove collector!")
+        print("[ERROR] Block may be protected or unminable by turtles")
+        print("[ERROR] Try: /give @p computercraft:turtle_advanced")
+        print("[ERROR] Or check region/claim permissions")
+        return false
     else
         print("[INFO] No collector below to remove")
         collectorPlaced = false
@@ -149,11 +171,29 @@ local function placeCollector()
     if turtle.placeDown() then
         collectorPlaced = true
         lastAction = "placed"
+        print("[SUCCESS] Collector placed")
         return true
-    else
-        print("[ERROR] Failed to place collector!")
-        return false
     end
+    
+    -- Placement failed - try command if available
+    print("[WARN] turtle.placeDown() failed, trying commands...")
+    if commands then
+        local success, result = pcall(function()
+            return commands.exec("setblock ~ ~-1 ~ projectexpansion:pink_collector")
+        end)
+        if success then
+            collectorPlaced = true
+            lastAction = "placed"
+            print("[SUCCESS] Collector placed by command")
+            return true
+        else
+            print("[ERROR] Command failed: " .. tostring(result))
+        end
+    end
+    
+    print("[ERROR] Failed to place collector!")
+    print("[ERROR] Check if space is obstructed or protected")
+    return false
 end
 
 -- Function to update collector state based on EMC
