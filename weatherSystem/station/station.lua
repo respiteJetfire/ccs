@@ -1,7 +1,7 @@
 -- weatherSystem/station/station.lua
 -- Weather Station v6.3.9 - Improved XL cloud designs
 -- Master handles all forecasting - station registers and displays
-local version = "8.1.0"
+local version = "8.2.0"
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -100,7 +100,7 @@ local localBiomeData = {
 
 -- Display state
 local currentPage = "current"
-local pageList = {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
+local pageList = {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent"}
 local currentPageIndex = 1
 local otherStationIndex = 0  -- Index for cycling through other stations
 local cachedOtherStation = nil  -- Cached other station for "other" pages
@@ -280,14 +280,35 @@ local function selectNextOtherStation()
                           currentForecast.stationForecasts[stationId]
 end
 
+-- Check if any mobs are detected (local or remote)
+local function hasMobsDetected()
+    if localMobData and localMobData.total and localMobData.total > 0 then
+        return true
+    end
+    if currentForecast and currentForecast.stationMobs then
+        for _, mobData in pairs(currentForecast.stationMobs) do
+            if mobData and mobData.total and mobData.total > 0 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 -- Get current page list based on whether we have other stations (will be redefined after colony init)
 local getActivePageList
 getActivePageList = function()
+    local base = {}
     if #allStations > 1 then
-        return {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
+        base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
     else
-        return {"current", "hourly", "fiveday", "overview", "mobradar"}
+        base = {"current", "hourly", "fiveday", "overview"}
     end
+    -- Only add mobradar if mobs are detected
+    if hasMobsDetected() then
+        table.insert(base, "mobradar")
+    end
+    return base
 end
 
 local function listContains(list, value)
@@ -475,7 +496,7 @@ local function cycleLoop()
             lastPageChange = now
             
             -- Select a new other station when entering "other" pages
-            if currentPage == "other5day" or currentPage == "othercurrent" or currentPage == "othermob" then
+            if currentPage == "other5day" or currentPage == "othercurrent" then
                 selectNextOtherStation()
             end
         end
@@ -545,9 +566,9 @@ end
 getActivePageList = function()
     local base = {}
     if #allStations > 1 then
-        base = {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
+        base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
     else
-        base = {"current", "hourly", "fiveday", "overview", "mobradar"}
+        base = {"current", "hourly", "fiveday", "overview"}
     end
 
     if colonyAvailable and config.COLONY and config.COLONY.SHOW_PAGES then
@@ -562,7 +583,12 @@ getActivePageList = function()
                 table.insert(out, "colony_requests")
             end
         end
-        return out
+        base = out
+    end
+
+    -- Only add mobradar if mobs are detected
+    if hasMobsDetected() then
+        table.insert(base, "mobradar")
     end
 
     return base

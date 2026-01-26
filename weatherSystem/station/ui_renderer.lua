@@ -1,6 +1,6 @@
 -- weatherSystem/station/ui_renderer.lua
--- UI Renderer v6.3.9 - Improved XL cloud designs
-local version = "7.1.0"
+-- UI Renderer v7.2.0 - Unified radar, mob counts in overview
+local version = "7.3.0"
 
 local renderer = {}
 
@@ -250,28 +250,63 @@ local function trimName(name, maxLen)
     return name:sub(1, maxLen - 2) .. ".."
 end
 
-function renderer.drawMobRadarPage(mobData)
+function renderer.drawMobRadarPage(localMobData, stationMobs, stations)
     local adaptiveColors = getAdaptiveColors()
     local bgColor = getBackgroundColor()
 
     renderer.drawText(2, 3, "Mob Radar", adaptiveColors.textHighlight, bgColor)
     renderer.drawLine(4, "-", adaptiveColors.textSecondary, bgColor)
 
-    if not mobData or not mobData.mobs then
-        renderer.drawCenteredText(10, "No mob data", colors.orange)
+    -- Aggregate mob data from all sources
+    local allMobs = {}
+    local totalMobs = 0
+    local totalHostiles = 0
+    local maxRange = 24
+
+    -- Add local mobs
+    if localMobData and localMobData.mobs then
+        if localMobData.range and localMobData.range > maxRange then
+            maxRange = localMobData.range
+        end
+        for _, mob in ipairs(localMobData.mobs) do
+            table.insert(allMobs, mob)
+        end
+        totalMobs = totalMobs + (localMobData.total or 0)
+        totalHostiles = totalHostiles + (localMobData.hostiles or 0)
+    end
+
+    -- Add mobs from other stations (they are already relative to each station, but we show them all)
+    if stationMobs then
+        for stationId, mobData in pairs(stationMobs) do
+            if mobData and mobData.mobs then
+                if mobData.range and mobData.range > maxRange then
+                    maxRange = mobData.range
+                end
+                for _, mob in ipairs(mobData.mobs) do
+                    -- Mark mobs from other stations (for different display if needed)
+                    local mobCopy = {}
+                    for k, v in pairs(mob) do mobCopy[k] = v end
+                    mobCopy.fromStation = stationId
+                    table.insert(allMobs, mobCopy)
+                end
+                totalMobs = totalMobs + (mobData.total or 0)
+                totalHostiles = totalHostiles + (mobData.hostiles or 0)
+            end
+        end
+    end
+
+    if #allMobs == 0 then
+        renderer.drawCenteredText(10, "No mobs detected", colors.lime)
         return
     end
 
-    local range = mobData.range or 24
+    local range = maxRange
     if range < 1 then range = 24 end
-
-    local hostiles = mobData.hostiles or 0
-    local total = mobData.total or 0
     
     -- Draw stats
-    local statStr = string.format("Mob:%d Hostile:%d Rng:%d", total, hostiles, range)
+    local statStr = string.format("Mob:%d Hostile:%d Rng:%d", totalMobs, totalHostiles, range)
     if #statStr < monitorWidth - 12 then
-        renderer.drawText(monitorWidth - #statStr, 3, statStr, adaptiveColors.textSecondary, bgColor)
+        renderer.drawText(monitorWidth - #statStr, 3, statStr, totalHostiles > 0 and colors.red or adaptiveColors.textSecondary, bgColor)
     end
 
     -- Define plotting area
@@ -310,13 +345,11 @@ function renderer.drawMobRadarPage(mobData)
     if centerX + rangeX <= monitorWidth then renderer.drawText(centerX + rangeX, centerY, ">", adaptiveColors.textSecondary, bgColor) end
     if centerX - rangeX >= 1 then renderer.drawText(centerX - rangeX, centerY, "<", adaptiveColors.textSecondary, bgColor) end
 
-    local mobs = mobData.mobs or {}
-    
     -- Separate to draw hostiles last (on top)
     local neutrals = {}
     local hostilesList = {}
     
-    for _, mob in ipairs(mobs) do
+    for _, mob in ipairs(allMobs) do
         if mob.hostile then
             table.insert(hostilesList, mob)
         else
@@ -744,7 +777,7 @@ function renderer.draw5DayPage(forecast)
 end
 
 -- Draw stations overview page (shows weather at each station)
-function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
+function renderer.drawOverviewPage(forecast, stations, currentStationIndex, localMobData, stationMobs)
     local adaptiveColors = getAdaptiveColors()
     renderer.drawText(2, 3, "All Stations", adaptiveColors.textHighlight, getBackgroundColor())
     
@@ -755,17 +788,18 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
     
     -- Large display: show icons and more details per station
     if isLargeDisplay then
-        renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
+        renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex, localMobData, stationMobs)
         return
     end
     
     -- Standard display: compact table view
     -- Column headers
     renderer.drawText(2, 4, "Station", adaptiveColors.textSecondary, getBackgroundColor())
-    renderer.drawText(22, 4, "Wx", adaptiveColors.textSecondary, getBackgroundColor())
-    renderer.drawText(26, 4, "Temp", adaptiveColors.textSecondary, getBackgroundColor())
-    renderer.drawText(33, 4, "Rain", adaptiveColors.textSecondary, getBackgroundColor())
-    renderer.drawText(40, 4, "Biome", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(20, 4, "Wx", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(24, 4, "Temp", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(30, 4, "Rain", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(36, 4, "Mob", adaptiveColors.textSecondary, getBackgroundColor())
+    renderer.drawText(41, 4, "Biome", adaptiveColors.textSecondary, getBackgroundColor())
     renderer.drawLine(5, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
     local y = 6
@@ -780,7 +814,7 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
             
             -- Station name
             local name = station.name or ("Station " .. tostring(station.id))
-            if #name > 17 then name = name:sub(1, 15) .. ".." end
+            if #name > 15 then name = name:sub(1, 13) .. ".." end
             renderer.drawText(2, y, prefix .. name, nameColor, getBackgroundColor())
             
             -- Get station forecast if available - try both string and number keys
@@ -803,11 +837,11 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
                 local state = assets.convertWeatherForBiome(current.predictedState or "clear", stationBiome)
                 local symbol = assets.getAnimatedSymbol(state)
                 local color = assets.getWeatherColor(state)
-                renderer.drawText(22, y, symbol .. symbol, color, getBackgroundColor())
+                renderer.drawText(20, y, symbol .. symbol, color, getBackgroundColor())
                 
                 -- Temperature
                 if current.temperature then
-                    renderer.drawText(26, y, tostring(math.floor(current.temperature)) .. "C", 
+                    renderer.drawText(24, y, tostring(math.floor(current.temperature)) .. "C", 
                         assets.getTemperatureColor(current.temperature), getBackgroundColor())
                 end
                 
@@ -815,20 +849,31 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
                 if current.rainChance then
                     local rainStr = tostring(current.rainChance) .. "%"
                     local rainColor = current.rainChance > 50 and assets.colors.rain or adaptiveColors.textSecondary
-                    renderer.drawText(33, y, rainStr, rainColor, getBackgroundColor())
+                    renderer.drawText(30, y, rainStr, rainColor, getBackgroundColor())
                 end
             else
                 -- No forecast data - show placeholder
-                renderer.drawText(22, y, "??", adaptiveColors.textSecondary, getBackgroundColor())
-                renderer.drawText(26, y, "??C", adaptiveColors.textSecondary, getBackgroundColor())
-                renderer.drawText(33, y, "??%", adaptiveColors.textSecondary, getBackgroundColor())
+                renderer.drawText(20, y, "??", adaptiveColors.textSecondary, getBackgroundColor())
+                renderer.drawText(24, y, "??C", adaptiveColors.textSecondary, getBackgroundColor())
+                renderer.drawText(30, y, "??%", adaptiveColors.textSecondary, getBackgroundColor())
             end
+            
+            -- Hostile mob count for this station
+            local mobCount = 0
+            local mobDataForStation = stationMobs and stationMobs[tostring(stationId)]
+            if mobDataForStation and mobDataForStation.hostiles then
+                mobCount = mobDataForStation.hostiles
+            elseif localMobData and tostring(stationId) == tostring(config.STATION_ID) then
+                mobCount = localMobData.hostiles or 0
+            end
+            local mobColor = mobCount > 0 and colors.red or adaptiveColors.textSecondary
+            renderer.drawText(36, y, tostring(mobCount), mobColor, getBackgroundColor())
             
             -- Biome (truncated)
             if station.biome then
                 local biomeStr = station.biome:gsub("minecraft:", ""):gsub("_", " ")
-                if #biomeStr > 12 then biomeStr = biomeStr:sub(1, 10) .. ".." end
-                renderer.drawText(40, y, biomeStr, adaptiveColors.textSecondary, getBackgroundColor())
+                if #biomeStr > 10 then biomeStr = biomeStr:sub(1, 8) .. ".." end
+                renderer.drawText(41, y, biomeStr, adaptiveColors.textSecondary, getBackgroundColor())
             end
             
             y = y + 1
@@ -840,7 +885,7 @@ function renderer.drawOverviewPage(forecast, stations, currentStationIndex)
 end
 
 -- Large display overview with icons and detailed info per station
-function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
+function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex, localMobData, stationMobs)
     local adaptiveColors = getAdaptiveColors()
     renderer.drawLine(4, "-", adaptiveColors.textSecondary, getBackgroundColor())
     
@@ -928,6 +973,18 @@ function renderer.drawOverviewPageLarge(forecast, stations, currentStationIndex)
             else
                 -- No data
                 renderer.drawText(x, y + 2, "No data", adaptiveColors.textSecondary, getBackgroundColor())
+            end
+            
+            -- Hostile mob count for this station
+            local mobCount = 0
+            local mobDataForStation = stationMobs and stationMobs[tostring(stationId)]
+            if mobDataForStation and mobDataForStation.hostiles then
+                mobCount = mobDataForStation.hostiles
+            elseif localMobData and isCurrentStation then
+                mobCount = localMobData.hostiles or 0
+            end
+            if mobCount > 0 then
+                renderer.drawText(x + colWidth - 4, y, "!" .. mobCount, colors.red, getBackgroundColor())
             end
             
             -- Biome
@@ -1077,12 +1134,21 @@ end
 function renderer.renderPage(forecast, stations, page, stationIndex, otherStation, otherStationForecast, colonyData, mobData, stationMobs)
     renderer.clear()
 
+    -- Check if any mobs are detected
+    local hasMobs = false
+    if mobData and mobData.total and mobData.total > 0 then hasMobs = true end
+    if stationMobs then
+        for _, md in pairs(stationMobs) do
+            if md and md.total and md.total > 0 then hasMobs = true break end
+        end
+    end
+
     -- Build page order dynamically (accounts for other stations and optional colony pages)
     local base = {}
     if stations and #stations > 1 then
-        base = {"current", "hourly", "fiveday", "overview", "mobradar", "other5day", "othercurrent", "othermob"}
+        base = {"current", "hourly", "fiveday", "overview", "other5day", "othercurrent"}
     else
-        base = {"current", "hourly", "fiveday", "overview", "mobradar"}
+        base = {"current", "hourly", "fiveday", "overview"}
     end
 
     local includeColony = false
@@ -1098,11 +1164,15 @@ function renderer.renderPage(forecast, stations, page, stationIndex, otherStatio
             table.insert(pageOrder, "colony_requests")
         end
     end
+    -- Add mobradar only if mobs detected
+    if hasMobs then
+        table.insert(pageOrder, "mobradar")
+    end
 
     -- Map page to human-friendly indicator
     local pageNames = {}
     for i, v in ipairs(pageOrder) do
-        local short = v == "current" and "Now" or (v == "hourly" and "24hr") or (v == "fiveday" and "5day") or (v == "overview" and "All") or (v == "mobradar" and "Radar") or (v == "other5day" and "Other") or (v == "othercurrent" and "Other") or (v == "othermob" and "Other") or (v:match("colony_") and v:gsub("colony_", "Col ")) or v
+        local short = v == "current" and "Now" or (v == "hourly" and "24hr") or (v == "fiveday" and "5day") or (v == "overview" and "All") or (v == "mobradar" and "Radar") or (v == "other5day" and "Other") or (v == "othercurrent" and "Other") or (v:match("colony_") and v:gsub("colony_", "Col ")) or v
         pageNames[v] = tostring(i) .. "/" .. tostring(#pageOrder) .. " " .. short
     end
 
@@ -1128,16 +1198,13 @@ function renderer.renderPage(forecast, stations, page, stationIndex, otherStatio
     elseif page == "fiveday" then
         renderer.draw5DayPage(forecast)
     elseif page == "overview" then
-        renderer.drawOverviewPage(forecast, stations, stationIndex)
+        renderer.drawOverviewPage(forecast, stations, stationIndex, mobData, stationMobs)
     elseif page == "mobradar" then
-        renderer.drawMobRadarPage(mobData)
+        renderer.drawMobRadarPage(mobData, stationMobs, stations)
     elseif page == "other5day" and otherStation and otherStationForecast then
         renderer.drawOtherStation5Day(forecast, otherStation, otherStationForecast)
     elseif page == "othercurrent" and otherStation and otherStationForecast then
         renderer.drawOtherStationCurrent(forecast, otherStation, otherStationForecast)
-    elseif page == "othermob" and otherStation and stationMobs then
-        local otherId = tostring(otherStation.id)
-        renderer.drawMobRadarPage(stationMobs[otherId])
     elseif page:sub(1,7) == "colony_" then
         renderColonyPage(page, colonyData)
     else
