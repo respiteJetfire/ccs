@@ -1,23 +1,55 @@
 -- CC script to receive and display EMC data from EMC masters
-local version = "0.1.0"
+local version = "0.2.0"
 
 print("[INFO] EMC Client v" .. version .. " starting...")
 
--- Prompt for player name filter
-term.clear()
-term.setCursorPos(1, 1)
-print("EMC Monitor Client")
-print("==================")
-print("")
-write("Enter player name to monitor (or leave blank for all): ")
-local filterName = read()
-if filterName == "" then
-    filterName = nil
-    print("Monitoring all players")
+-- Load or create configuration
+local filterName = nil
+local configPath = "emcClient/config.json"
+
+if fs.exists(configPath) then
+    local file = fs.open(configPath, "r")
+    local content = file.readAll()
+    file.close()
+    local config = textutils.unserializeJSON(content)
+    filterName = config.filterName
+    if filterName == "" or filterName == "*" then
+        filterName = nil
+    end
+    print("[INFO] Configuration loaded: " .. (filterName and ("Monitoring " .. filterName) or "Monitoring all players"))
 else
-    print("Monitoring: " .. filterName)
+    term.clear()
+    term.setCursorPos(1, 1)
+    print("EMC Monitor Client - First Time Setup")
+    print("======================================")
+    print("")
+    write("Enter player name to monitor (or leave blank for all): ")
+    local input = read()
+    
+    if input == "" then
+        filterName = nil
+        input = "*"  -- Store as wildcard in config
+        print("Monitoring all players")
+    else
+        filterName = input
+        print("Monitoring: " .. filterName)
+    end
+    
+    -- Create directory if needed
+    if not fs.exists("emcClient") then
+        fs.makeDir("emcClient")
+    end
+    
+    -- Save configuration
+    local config = {filterName = input}
+    local file = fs.open(configPath, "w")
+    file.write(textutils.serializeJSON(config))
+    file.close()
+    
+    print("[INFO] Configuration saved")
+    print("")
+    sleep(2)
 end
-print("")
 
 -- Find and open wireless modem for receiving
 print("[INFO] Searching for wireless modem...")

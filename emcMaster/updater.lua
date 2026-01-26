@@ -1,6 +1,6 @@
 -- updater.lua
 -- Computer Craft Script Updater for EMC Master
-local version = "1.0.0"
+local version = "1.1.0"
 print("[INFO] Updater v" .. version .. " starting...")
 
 local repo = "https://github.com/respiteJetfire/ccs/blob/main/"
@@ -47,7 +47,6 @@ local function updateScripts()
         {remote = "emcMaster/startup.lua", local_ = "startup.lua"},
         {remote = "emcMaster/updater.lua", local_ = "updater.lua"},
         {remote = "emcMaster/manager.lua", local_ = "emcMaster/manager.lua"},
-        {remote = "emcMaster/config.lua", local_ = "emcMaster/config.lua"},
         -- add more files as needed
     }
 

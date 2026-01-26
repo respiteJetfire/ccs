@@ -1,28 +1,44 @@
 -- CC script to monitor EMC via emc_link peripheral and broadcast via rednet
-local version = "0.1.0"
+local version = "0.2.0"
 local CHECK_INTERVAL = 5  -- seconds between broadcasts
 
 print("[INFO] EMC Master v" .. version .. " starting...")
 print("[INFO] Check interval: " .. tostring(CHECK_INTERVAL) .. "s")
 
--- Load configuration
+-- Load or create configuration
 local config = {}
-if fs.exists("emcMaster/config.lua") then
-    local configFunc = dofile("emcMaster/config.lua")
-    if type(configFunc) == "table" then
-        config = configFunc
-    end
-    print("[INFO] Configuration loaded: Player = " .. (config.playerName or "Not Set"))
-else
-    print("[WARN] Config file not found. Creating default config...")
-    local file = fs.open("emcMaster/config.lua", "w")
-    file.write('-- EMC Master Configuration\nreturn {\n    playerName = "YourPlayerName",  -- Set this to the player\'s username\n}\n')
-    file.close()
-    error("[ERROR] Please edit emcMaster/config.lua and set your player name!")
-end
+local configPath = "emcMaster/config.json"
 
-if not config.playerName or config.playerName == "YourPlayerName" then
-    error("[ERROR] Please edit emcMaster/config.lua and set your player name!")
+if fs.exists(configPath) then
+    local file = fs.open(configPath, "r")
+    local content = file.readAll()
+    file.close()
+    config = textutils.unserializeJSON(content)
+    print("[INFO] Configuration loaded: Player = " .. config.playerName)
+else
+    print("[SETUP] No configuration found. Running first-time setup...")
+    print("")
+    write("Enter your Minecraft player name: ")
+    local playerName = read()
+    
+    if not playerName or playerName == "" then
+        error("[ERROR] Player name cannot be empty!")
+    end
+    
+    config.playerName = playerName
+    
+    -- Create directory if needed
+    if not fs.exists("emcMaster") then
+        fs.makeDir("emcMaster")
+    end
+    
+    -- Save configuration
+    local file = fs.open(configPath, "w")
+    file.write(textutils.serializeJSON(config))
+    file.close()
+    
+    print("[INFO] Configuration saved: Player = " .. config.playerName)
+    print("")
 end
 
 -- Find and open wireless modem for broadcasting
