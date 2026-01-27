@@ -1,5 +1,5 @@
 -- CC script to receive and display EMC data from EMC masters
-local version = "0.3.0"
+local version = "0.3.1"
 
 print("[INFO] EMC Client v" .. version .. " starting...")
 
@@ -124,6 +124,13 @@ local function getMonitorSizeCategory(width)
     end
 end
 
+-- Function to check if monitor is thin (low height)
+-- @param height Monitor height in characters
+-- @return boolean True if thin
+local function isThinMonitor(height)
+    return height <= 5
+end
+
 -- Function to format EMC numbers based on monitor size
 -- @param value EMC value to format
 -- @param sizeCategory Monitor size category
@@ -197,6 +204,7 @@ end
 -- @param h Monitor height
 local function displayListView(sizeCategory, w, h)
     local y = 3
+    local isThin = isThinMonitor(h)
     
     -- Sort players by name
     local sortedPlayers = {}
@@ -204,6 +212,66 @@ local function displayListView(sizeCategory, w, h)
         table.insert(sortedPlayers, name)
     end
     table.sort(sortedPlayers)
+    
+    -- For thin monitors, use horizontal layout
+    if isThin then
+        local x = 1
+        for _, playerName in ipairs(sortedPlayers) do
+            local data = playerData[playerName]
+            
+            -- Format: "Name: 1.2M" or "Name: 1.2M +100K"
+            local emcStr = formatEMC(data.emcValue, sizeCategory)
+            local displayStr = playerName .. ": " .. emcStr
+            
+            -- Add difference if available
+            if data.previousEMC then
+                local diff = data.emcValue - data.previousEMC
+                if diff ~= 0 then
+                    local diffStr, diffColor = formatEMCDiff(diff, sizeCategory)
+                    displayStr = displayStr .. " " .. diffStr
+                end
+            end
+            
+            -- Check if we have space on current line
+            if x + #displayStr + 3 > w then
+                -- Move to next line
+                y = y + 1
+                x = 1
+                if y > h then break end
+            end
+            
+            monitor.setCursorPos(x, y)
+            monitor.setTextColor(colors.white)
+            monitor.write(playerName .. ": ")
+            
+            monitor.setTextColor(colors.lime)
+            local emcOnlyStr = formatEMC(data.emcValue, sizeCategory)
+            monitor.write(emcOnlyStr)
+            
+            -- Show difference in color
+            if data.previousEMC then
+                local diff = data.emcValue - data.previousEMC
+                if diff ~= 0 then
+                    local diffStr, diffColor = formatEMCDiff(diff, sizeCategory)
+                    monitor.setTextColor(diffColor)
+                    monitor.write(" " .. diffStr)
+                end
+            end
+            
+            x = x + #displayStr + 3  -- Add spacing between entries
+        end
+        
+        if y == 3 and x == 1 then
+            monitor.setCursorPos(1, 3)
+            monitor.setTextColor(colors.gray)
+            if filterName then
+                monitor.write("No data for " .. filterName)
+            else
+                monitor.write("Waiting for broadcasts...")
+            end
+        end
+        return
+    end
     
     -- Calculate row height based on size
     local rowHeight = 3
@@ -287,6 +355,7 @@ end
 -- @param h Monitor height
 local function displayBarView(sizeCategory, w, h)
     local y = 3
+    local isThin = isThinMonitor(h)
     
     -- Calculate total EMC
     local totalEMC = 0
@@ -306,9 +375,9 @@ local function displayBarView(sizeCategory, w, h)
     -- Sort by EMC descending
     table.sort(playerList, function(a, b) return a.emc > b.emc end)
     
-    -- Define bar area
+    -- Define bar area - adjusted for thin monitors
     local barY = 3
-    local barHeight = math.max(3, math.min(10, h - 5))
+    local barHeight = isThin and 1 or math.max(3, math.min(10, h - 5))
     local barWidth = w - 2
     
     -- Color palette for players
@@ -356,43 +425,70 @@ local function displayBarView(sizeCategory, w, h)
     end
     
     -- Show legend below bar
-    y = barY + 2
-    for i, player in ipairs(playerList) do
-        if y > h then break end
-        
-        local color = playerColors[((i - 1) % #playerColors) + 1]
-        monitor.setCursorPos(1, y)
-        monitor.setBackgroundColor(color)
-        monitor.setTextColor(colors.black)
-        monitor.write(" ")
-        monitor.setBackgroundColor(colors.black)
-        
-        monitor.setTextColor(colors.white)
-        local percentage = (player.emc / totalEMC) * 100
-        local emcStr = formatEMC(player.emc, sizeCategory)
-        
-        if sizeCategory == SIZE_TINY then
-            -- Ultra compact
-            monitor.write(" " .. player.name:sub(1, w - 5))
-        elseif sizeCategory == SIZE_SMALL then
-            -- Name and EMC
-            monitor.write(" " .. player.name .. ": " .. emcStr)
-        else
-            -- Name, EMC, and percentage
-            monitor.write(" " .. player.name .. ": " .. emcStr .. string.format(" (%.1f%%)", percentage))
+    y = barY + (isThin and 1 or 2)
+    
+    -- For thin monitors, show legend horizontally
+    if isThin and y <= h then
+        local x = 1
+        for i, player in ipairs(playerList) do
+            local color = playerColors[((i - 1) % #playerColors) + 1]
+            local percentage = (player.emc / totalEMC) * 100
+            local emcStr = formatEMC(player.emc, sizeCategory, true)
+            local entry = player.name .. ":" .. emcStr
             
-            -- Show difference if available
-            if player.data.previousEMC and sizeCategory == SIZE_LARGE then
-                local diff = player.emc - player.data.previousEMC
-                if diff ~= 0 then
-                    local diffStr, diffColor = formatEMCDiff(diff, sizeCategory)
-                    monitor.setTextColor(diffColor)
-                    monitor.write(" " .. diffStr)
+            if x + #entry + 2 > w then
+                break  -- No more space
+            end
+            
+            monitor.setCursorPos(x, y)
+            monitor.setBackgroundColor(color)
+            monitor.setTextColor(colors.black)
+            monitor.write(" ")
+            monitor.setBackgroundColor(colors.black)
+            monitor.setTextColor(colors.white)
+            monitor.write(" " .. entry)
+            
+            x = x + #entry + 3
+        end
+    else
+        -- Vertical legend for taller monitors
+        for i, player in ipairs(playerList) do
+            if y > h then break end
+            
+            local color = playerColors[((i - 1) % #playerColors) + 1]
+            monitor.setCursorPos(1, y)
+            monitor.setBackgroundColor(color)
+            monitor.setTextColor(colors.black)
+            monitor.write(" ")
+            monitor.setBackgroundColor(colors.black)
+            
+            monitor.setTextColor(colors.white)
+            local percentage = (player.emc / totalEMC) * 100
+            local emcStr = formatEMC(player.emc, sizeCategory)
+            
+            if sizeCategory == SIZE_TINY then
+                -- Ultra compact
+                monitor.write(" " .. player.name:sub(1, w - 5))
+            elseif sizeCategory == SIZE_SMALL then
+                -- Name and EMC
+                monitor.write(" " .. player.name .. ": " .. emcStr)
+            else
+                -- Name, EMC, and percentage
+                monitor.write(" " .. player.name .. ": " .. emcStr .. string.format(" (%.1f%%)", percentage))
+                
+                -- Show difference if available
+                if player.data.previousEMC and sizeCategory == SIZE_LARGE then
+                    local diff = player.emc - player.data.previousEMC
+                    if diff ~= 0 then
+                        local diffStr, diffColor = formatEMCDiff(diff, sizeCategory)
+                        monitor.setTextColor(diffColor)
+                        monitor.write(" " .. diffStr)
+                    end
                 end
             end
+            
+            y = y + 1
         end
-        
-        y = y + 1
     end
 end
 
@@ -405,9 +501,23 @@ local function updateDisplay()
     
     local w, h = monitor.getSize()
     local sizeCategory = getMonitorSizeCategory(w)
+    local isThin = isThinMonitor(h)
     
-    -- Draw header
-    if sizeCategory == SIZE_TINY then
+    -- Draw header - more compact for thin monitors
+    if isThin then
+        -- Compact header for thin monitors
+        if filterName then
+            monitor.write("EMC: " .. filterName:sub(1, math.min(#filterName, w - 6)))
+        else
+            monitor.write("EMC")
+        end
+        -- Add mode indicator if space allows
+        if w > 30 and displayMode == "bar" then
+            monitor.setCursorPos(w - 4, 1)
+            monitor.setTextColor(colors.gray)
+            monitor.write("[bar]")
+        end
+    elseif sizeCategory == SIZE_TINY then
         monitor.write("EMC")
     elseif sizeCategory == SIZE_SMALL then
         if filterName then
