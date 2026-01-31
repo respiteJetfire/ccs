@@ -4,9 +4,10 @@
     Uses lib.peripherals.energy and lib.display.graph
 ]]
 
-local version = "1.0.1"
+local version = "1.1.0"
 local lib = dofile("lib/init.lua")
 local modemLib = lib.peripherals.modem
+local rednetLib = lib.network and lib.network.rednet
 
 -- Load configuration (defaults provided)
 local configDefaults = {
@@ -128,28 +129,77 @@ local running = true
 local lastSample = takeSample()
 drawUI(lastSample)
 local function messageListener()
-    if not modemLib then
-        print("[INFO] Modem library not available; skipping rednet listener")
+    if not rednetLib and not modemLib then
+        print("[INFO] No rednet/modem helpers available; skipping rednet listener")
         return
     end
 
-    local ok, err = modemLib.openRednet()
-    if not ok then
-        print("[INFO] Rednet not available: " .. tostring(err))
+    -- Prefer higher-level rednet wrapper if available
+    local openOk, openErr
+    if rednetLib and type(rednetLib.open) == "function" then
+        openOk, openErr = rednetLib.open()
+    else
+        openOk, openErr = modemLib.openRednet()
+    end
+    if not openOk then
+        print("[INFO] Rednet not available: " .. tostring(openErr))
         return
     end
 
     while true do
-        local sender, msg, proto = rednet.receive()
-        -- Expecting a table-like message with fields: percent, total, max, ts, deviceCount
-        local sOk, sErr = pcall(function()
-            if type(msg) == "table" then
-                if not msg.ts then msg.ts = (os and os.epoch and os.epoch("utc")) or (math.floor(os.time() * 1000)) end
-                lastRemote = msg
+        local senderId, msg, proto, rErr
+        if rednetLib and type(rednetLib.receive) == "function" then
+            senderId, msg, proto, rErr = rednetLib.receive("energy_master", nil)
+        else
+            local ok, s, m, p = pcall(function() return rednet.receive("energy_master") end)
+            if ok then senderId, msg, proto = s, m, p else rErr = tostring(s) end
+        end
+
+        if rErr then
+            print("[WARN] Rednet receive error: " .. tostring(rErr))
+            sleep(1)
+            -- keep listening
+        else
+            -- Normalize message to expected fields: percent, total, max, ts, deviceCount
+            local success, normErr = pcall(function()
+                if type(msg) ~= "table" then return end
+                local percent, total, max, ts, deviceCount
+
+                if msg.percent then
+                    percent = msg.percent
+                    total = msg.total
+                    max = msg.max
+                    ts = msg.ts or msg.timestamp
+                    deviceCount = msg.deviceCount
+                elseif msg.percentFull or msg.type == "energy_status" then
+                    percent = msg.percentFull or msg.percent
+                    total = msg.totalEnergy or msg.total
+                    max = msg.totalMaxEnergy or msg.totalMax
+                    ts = msg.timestamp or msg.ts
+                    deviceCount = msg.deviceCount or msg.device_count
+                else
+                    -- Try common fallback keys
+                    percent = msg.percent or msg.percentFull or msg.p
+                    total = msg.total or msg.totalEnergy or msg.t
+                    max = msg.max or msg.totalMaxEnergy or msg.m
+                    ts = msg.ts or msg.timestamp
+                    deviceCount = msg.deviceCount or msg.device_count or msg.dc
+                end
+
+                if not ts then ts = (os and os.epoch and os.epoch("utc")) or (math.floor(os.time() * 1000)) end
+
+                lastRemote = {
+                    percent = tonumber(percent) or 0,
+                    total = tonumber(total) or 0,
+                    max = tonumber(max) or 0,
+                    ts = tonumber(ts),
+                    deviceCount = tonumber(deviceCount) or 0
+                }
+                print("[INFO] Received energy_master broadcast: " .. tostring(lastRemote.percent) .. " %")
+            end)
+            if not success then
+                print("[WARN] Error processing rednet message: " .. tostring(normErr))
             end
-        end)
-        if not sOk then
-            print("[WARN] Error processing rednet message: " .. tostring(sErr))
         end
     end
 end
