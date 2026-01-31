@@ -1,6 +1,9 @@
 -- energyGraph/updater.lua
 -- Downloader that fetches files from the repository's raw URLs when HTTP is available.
 
+local version = "1.0.0"
+print("[INFO] Updater v" .. version .. " starting...")
+
 local repoBase = "https://raw.githubusercontent.com/respiteJetfire/ccs/main/"
 local files = {
 	"energyGraph/manager.lua",
@@ -41,14 +44,23 @@ local function downloadFile(remotePath, localPath)
 	f.write(content)
 	f.close()
 	print("[OK] Updated " .. localPath)
-	return true
+	return true, content
 end
 
 print("[INFO] energyGraph updater starting...")
 for _, p in ipairs(files) do
-	local success = downloadFile(p, p)
-	if not success then
+	local ok, content = downloadFile(p, p)
+	if not ok then
 		print("[WARN] Update failed for: " .. p)
+	else
+		-- If updater or startup inside energyGraph were updated, also place copies at root
+		if p == "energyGraph/startup.lua" then
+			local rf = fs.open("startup.lua", "w")
+			if rf then rf.write(content); rf.close(); print("[OK] Wrote startup.lua to root") end
+		elseif p == "energyGraph/updater.lua" then
+			local rf = fs.open("updater.lua", "w")
+			if rf then rf.write(content); rf.close(); print("[OK] Wrote updater.lua to root") end
+		end
 	end
 end
 
