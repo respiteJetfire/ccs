@@ -1,7 +1,11 @@
 -- weatherSystem/station/colony_integration.lua
 -- Colony Integrator Module for Advanced Peripherals colonyIntegrator
 -- API Reference: https://docs.advanced-peripherals.de/latest/peripherals/colony_integrator/
+-- Dependencies: lib (peripherals.colony)
 local version = "1.3.0"
+
+-- Load shared library for colony peripheral discovery
+local lib = dofile("lib/init.lua")
 
 local colony = {}
 
@@ -40,28 +44,13 @@ local function safeCall(methodName)
     return result
 end
 
--- Scan for colony peripheral (match "colonyIntegrator" type)
+-- Scan for colony peripheral using lib.peripherals.colony
 function colony.detect()
-    local names = peripheral.getNames()
-    if not names then 
-        peripheralRef = nil
-        enabled = false
-        return nil 
-    end
-    
-    for _, name in ipairs(names) do
-        local ok, pType = pcall(peripheral.getType, name)
-        if ok and pType then
-            -- Check for exact match or partial match
-            if pType == "colonyIntegrator" or (type(pType) == "string" and pType:lower():find("colony")) then
-                local ok2, wrap = pcall(peripheral.wrap, name)
-                if ok2 and wrap then
-                    peripheralRef = wrap
-                    enabled = true
-                    return peripheralRef
-                end
-            end
-        end
+    local colonyPeripheral, name = lib.peripherals.colony.findColonyPeripheral()
+    if colonyPeripheral then
+        peripheralRef = colonyPeripheral
+        enabled = true
+        return peripheralRef
     end
     peripheralRef = nil
     enabled = false

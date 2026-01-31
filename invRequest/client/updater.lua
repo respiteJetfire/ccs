@@ -24,10 +24,14 @@ end
 -- main method to call functions
 local function updateScripts()
     local filesToUpdate = {
+        -- Script files
         {remote = "invRequest/client/startup.lua", local_ = "startup.lua"},
         {remote = "invRequest/client/updater.lua", local_ = "updater.lua"},
         {remote = "invRequest/client/client.lua", local_ = "invRequest/client/client.lua"},
-        -- add more files as needed
+        -- Library dependencies
+        {remote = "lib/init.lua", local_ = "lib/init.lua"},
+        {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+        {remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua"},
     }
 
     for _, file in ipairs(filesToUpdate) do

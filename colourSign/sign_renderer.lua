@@ -1,42 +1,43 @@
 -- Helper for rendering a colour sign on a monitor peripheral
+-- Dependencies: lib (shared library for display.colors, display.layout)
+
+local lib = dofile("lib/init.lua")
+
 local M = {}
 
+-- Helper for color conversion using lib.display.colors
 local function colorNameToColor(name)
-    if type(name) ~= "string" then return colors.white end
-    local lower = name:lower()
-    -- Map common names; fallback to colors.white
-    local ok, val = pcall(function() return colors[lower] end)
-    if ok and val then return val end
-    return colors.white
+    return lib.display.colors.parse(name, colors.white)
 end
 
-local function centerTextPosition(monitor, text)
-    local w, h = monitor.getSize()
-    local x = math.floor((w - #text) / 2) + 1
+-- Helper for centering text using lib.display.layout
+local function centerTextPosition(mon, text)
+    local w, h = mon.getSize()
+    local x = lib.display.layout.centerX(w, #text)
     local y = math.floor(h / 2)
     return x, y
 end
 
-function M.render(monitor, cfg, colorName, arrowOn)
+function M.render(mon, cfg, colorName, arrowOn)
     local bgColor = colorNameToColor(cfg.bg_color or "black")
-    monitor.setBackgroundColor(bgColor)
-    monitor.clear()
+    mon.setBackgroundColor(bgColor)
+    mon.clear()
 
     local fg = colorNameToColor(colorName)
-    monitor.setTextColor(fg)
+    mon.setTextColor(fg)
 
-    local w, h = monitor.getSize()
+    local w, h = mon.getSize()
 
     -- Determine vertical offsets (support up to 3 lines)
     local lines = cfg.lines or {}
-    local startRow = math.max(1, math.floor((h - #lines) / 2) + 1)
+    local startRow = lib.display.layout.centerY(h, #lines)
 
     for i = 1, #lines do
         local line = tostring(lines[i] or "")
-        local x = math.floor((w - #line) / 2) + 1
+        local x = lib.display.layout.centerX(w, #line)
         local y = startRow + i - 1
-        monitor.setCursorPos(x, y)
-        monitor.write(line)
+        mon.setCursorPos(x, y)
+        mon.write(line)
     end
 
     -- Arrow drawing
@@ -46,23 +47,23 @@ function M.render(monitor, cfg, colorName, arrowOn)
         if cfg.arrow == "left" then
             local x = 1
             local y = math.floor(h / 2)
-            monitor.setCursorPos(x, y)
-            monitor.write(arrowChar)
+            mon.setCursorPos(x, y)
+            mon.write(arrowChar)
         elseif cfg.arrow == "right" then
             local x = w
             local y = math.floor(h / 2)
-            monitor.setCursorPos(x, y)
-            monitor.write(arrowChar)
+            mon.setCursorPos(x, y)
+            mon.write(arrowChar)
         elseif cfg.arrow == "up" then
             local x = math.floor(w / 2)
             local y = 1
-            monitor.setCursorPos(x, y)
-            monitor.write(arrowChar)
+            mon.setCursorPos(x, y)
+            mon.write(arrowChar)
         elseif cfg.arrow == "down" then
             local x = math.floor(w / 2)
             local y = h
-            monitor.setCursorPos(x, y)
-            monitor.write(arrowChar)
+            mon.setCursorPos(x, y)
+            mon.write(arrowChar)
         end
     end
 end

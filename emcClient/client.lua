@@ -1,18 +1,22 @@
 -- CC script to receive and display EMC data from EMC masters
 local version = "0.3.1"
 
+-- Load shared library (lib dependencies: config.manager, config.wizard, peripherals.modem,
+-- peripherals.monitor, format.numbers, data.stale, display.renderer, display.colors, network.rednet)
+local lib = dofile("lib/init.lua")
+
 print("[INFO] EMC Client v" .. version .. " starting...")
 
--- Load or create configuration
+-- Load or create configuration using lib.config.manager
 local filterName = nil
 local displayMode = "list"  -- "list" or "bar"
 local configPath = "emcClient/config.json"
+local configDefaults = { filterName = "*", displayMode = "list" }
 
-if fs.exists(configPath) then
-    local file = fs.open(configPath, "r")
-    local content = file.readAll()
-    file.close()
-    local config = textutils.unserializeJSON(content)
+local config, configErr = lib.config.manager.load(configPath, configDefaults)
+
+if config and lib.config.manager.exists(configPath) then
+    -- Configuration file exists, use loaded values
     filterName = config.filterName
     displayMode = config.displayMode or "list"
     if filterName == "" or filterName == "*" then
@@ -21,15 +25,13 @@ if fs.exists(configPath) then
     print("[INFO] Configuration loaded: " .. (filterName and ("Monitoring " .. filterName) or "Monitoring all players"))
     print("[INFO] Display mode: " .. displayMode)
 else
-    term.clear()
-    term.setCursorPos(1, 1)
-    print("EMC Monitor Client - First Time Setup")
-    print("======================================")
-    print("")
-    write("Enter player name to monitor (or leave blank for all): ")
-    local input = read()
+    -- First time setup using lib.config.wizard
+    lib.config.wizard.clear()
+    lib.config.wizard.header("EMC Monitor Client - First Time Setup")
     
-    if input == "" then
+    local input = lib.config.wizard.ask("Enter player name to monitor (or leave blank for all)", "")
+    
+    if input == "" or input == nil then
         filterName = nil
         input = "*"  -- Store as wildcard in config
         print("Monitoring all players")
@@ -38,63 +40,42 @@ else
         print("Monitoring: " .. filterName)
     end
     
-    print("")
-    print("Select display mode:")
-    print("1. List view (default)")
-    print("2. Bar chart view")
-    write("Enter choice (1-2): ")
-    local modeChoice = read()
-    if modeChoice == "2" then
-        displayMode = "bar"
+    local modeChoice = lib.config.wizard.askChoice("Select display mode", {
+        {value = "list", label = "List view"},
+        {value = "bar", label = "Bar chart view"}
+    }, 1)
+    displayMode = modeChoice or "list"
+    
+    -- Save configuration using lib.config.manager
+    config = {filterName = input, displayMode = displayMode}
+    local saveOk, saveErr = lib.config.manager.save(configPath, config)
+    
+    if saveOk then
+        print("[INFO] Configuration saved")
     else
-        displayMode = "list"
+        print("[WARN] Failed to save config: " .. tostring(saveErr))
     end
-    
-    -- Create directory if needed
-    if not fs.exists("emcClient") then
-        fs.makeDir("emcClient")
-    end
-    
-    -- Save configuration
-    local config = {filterName = input, displayMode = displayMode}
-    local file = fs.open(configPath, "w")
-    file.write(textutils.serializeJSON(config))
-    file.close()
-    
-    print("[INFO] Configuration saved")
     print("")
     sleep(2)
 end
 
--- Find and open wireless modem for receiving
+-- Find and open wireless modem using lib.peripherals.modem
 print("[INFO] Searching for wireless modem...")
-local modemSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        modemSide = side
-        break
-    end
-end
+local modemSide, modemPeripheral = lib.peripherals.modem.findWirelessModem()
 if not modemSide then
     error("[ERROR] No wireless modem found! Please attach an ender modem.")
 end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
-rednet.open(modemSide)
-
--- Find monitor (or use computer screen)
-print("[INFO] Searching for monitor...")
-local monitor = nil
-local monitorSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "monitor" then
-        monitor = peripheral.wrap(side)
-        monitorSide = side
-        break
-    end
+local openOk, openErr = lib.peripherals.modem.openRednet(modemSide)
+if not openOk then
+    error("[ERROR] Failed to open rednet: " .. tostring(openErr))
 end
-if not monitor then
+
+-- Find monitor using lib.peripherals.monitor
+print("[INFO] Searching for monitor...")
+local monitor, displayType, monitorSide = lib.peripherals.monitor.findMonitorOrTerminal()
+if displayType == "terminal" then
     print("[INFO] No monitor found, using computer screen")
-    monitor = term.current()
     monitorSide = "terminal"
 else
     print("[INFO] Monitor found on " .. monitorSide)
@@ -103,25 +84,18 @@ end
 -- Store latest EMC data for players
 local playerData = {}
 
--- Monitor size categories
-local SIZE_TINY = "tiny"    -- width < 20
-local SIZE_SMALL = "small"  -- width 20-39
-local SIZE_MEDIUM = "medium" -- width 40-69
-local SIZE_LARGE = "large"  -- width 70+
+-- Monitor size categories (using lib.peripherals.monitor constants)
+-- Size thresholds: tiny < 15, small < 30, medium < 50, large >= 50
+local SIZE_TINY = "tiny"
+local SIZE_SMALL = "small"
+local SIZE_MEDIUM = "medium"
+local SIZE_LARGE = "large"
 
--- Function to detect monitor size category
+-- Function to detect monitor size category using lib.peripherals.monitor
 -- @param width Monitor width in characters
 -- @return string Size category
 local function getMonitorSizeCategory(width)
-    if width < 20 then
-        return SIZE_TINY
-    elseif width < 40 then
-        return SIZE_SMALL
-    elseif width < 70 then
-        return SIZE_MEDIUM
-    else
-        return SIZE_LARGE
-    end
+    return lib.peripherals.monitor.getSizeCategory(width)
 end
 
 -- Function to check if monitor is thin (low height)
@@ -131,7 +105,7 @@ local function isThinMonitor(height)
     return height <= 5
 end
 
--- Function to format EMC numbers based on monitor size
+-- Function to format EMC numbers based on monitor size using lib.format.numbers
 -- @param value EMC value to format
 -- @param sizeCategory Monitor size category
 -- @param compact If true, use minimal formatting
@@ -140,61 +114,37 @@ local function formatEMC(value, sizeCategory, compact)
     sizeCategory = sizeCategory or SIZE_MEDIUM
     compact = compact or false
     
-    if compact or sizeCategory == SIZE_TINY then
-        -- Ultra compact format
-        if value >= 1000000000 then
-            return string.format("%.1fB", value / 1000000000)
-        elseif value >= 1000000 then
-            return string.format("%.1fM", value / 1000000)
-        elseif value >= 1000 then
-            return string.format("%.1fK", value / 1000)
-        else
-            return string.format("%d", value)
-        end
-    elseif sizeCategory == SIZE_SMALL then
-        -- Compact format with unit
-        if value >= 1000000000 then
-            return string.format("%.2fB", value / 1000000000)
-        elseif value >= 1000000 then
-            return string.format("%.2fM", value / 1000000)
-        elseif value >= 1000 then
-            return string.format("%.2fK", value / 1000)
-        else
-            return string.format("%d", value)
-        end
-    else
-        -- Full format with label
-        if value >= 1000000000 then
-            return string.format("%.2fB EMC", value / 1000000000)
-        elseif value >= 1000000 then
-            return string.format("%.2fM EMC", value / 1000000)
-        elseif value >= 1000 then
-            return string.format("%.2fK EMC", value / 1000)
-        else
-            return string.format("%d EMC", value)
-        end
-    end
+    -- Use lib.format.numbers.formatEMC for formatting
+    -- Determine if we should include the unit based on size
+    local useCompact = compact or sizeCategory == SIZE_TINY or sizeCategory == SIZE_SMALL
+    local includeUnit = not compact and sizeCategory ~= SIZE_TINY and sizeCategory ~= SIZE_SMALL
+    
+    return lib.format.numbers.formatEMC(value, useCompact, includeUnit)
 end
 
--- Function to format EMC difference
+-- Function to format EMC difference using lib.format.numbers
 -- @param diff EMC difference value
 -- @param sizeCategory Monitor size category
 -- @return string Formatted difference string
 -- @return number Color for the difference (colors.lime or colors.red)
 local function formatEMCDiff(diff, sizeCategory)
     sizeCategory = sizeCategory or SIZE_MEDIUM
+    -- Use lib.display.colors concept: positive = lime, negative = red
     local color = diff >= 0 and colors.lime or colors.red
-    local prefix = diff >= 0 and "+" or ""
     
     if sizeCategory == SIZE_TINY then
         -- Just show +/-
         return diff >= 0 and "+" or "-", color
     elseif sizeCategory == SIZE_SMALL then
-        -- Compact with sign
-        return prefix .. formatEMC(math.abs(diff), sizeCategory, true), color
+        -- Compact with sign using lib.format.numbers.formatDiff
+        return lib.format.numbers.formatDiff(diff, function(v)
+            return lib.format.numbers.formatEMC(v, true, false)
+        end), color
     else
-        -- Full format
-        return prefix .. formatEMC(math.abs(diff), sizeCategory, false), color
+        -- Full format using lib.format.numbers.formatDiff
+        return lib.format.numbers.formatDiff(diff, function(v)
+            return lib.format.numbers.formatEMC(v, true, true)
+        end), color
     end
 end
 
@@ -325,10 +275,9 @@ local function displayListView(sizeCategory, w, h)
                 end
             end
             
-            -- Show age of data for larger monitors
+            -- Show age of data for larger monitors using lib.data.stale
             if sizeCategory ~= SIZE_TINY then
-                local age = os.epoch("utc") - data.lastUpdate
-                if age > 30000 then
+                if lib.data.stale.isStale(data.lastUpdate, 30000) then
                     monitor.setTextColor(colors.red)
                     monitor.write(" (stale)")
                 end
@@ -548,9 +497,13 @@ local function updateDisplay()
     end
 end
 
--- Function to listen for EMC broadcasts
+-- Stale data timeout for cleanup (60 seconds)
+local STALE_TIMEOUT = 60000
+
+-- Function to listen for EMC broadcasts using lib.network.rednet
 local function listenForUpdates()
     while true do
+        -- Use standard rednet.receive (lib.network.rednet.receive also works)
         local senderId, message, protocol = rednet.receive("emc_master", 1)
         if message then
             local success, data = pcall(textutils.unserialize, message)
@@ -568,7 +521,7 @@ local function listenForUpdates()
                     playerData[playerName] = {
                         emcValue = data.emcValue,
                         previousEMC = previousEMC,
-                        lastUpdate = os.epoch("utc")
+                        lastUpdate = lib.data.stale.getCurrentTime()
                     }
                     
                     print(string.format("[UPDATE] %s: %s", 
@@ -580,10 +533,9 @@ local function listenForUpdates()
             end
         end
         
-        -- Clean up stale data (older than 60 seconds)
-        local currentTime = os.epoch("utc")
+        -- Clean up stale data using lib.data.stale.isStale()
         for playerName, data in pairs(playerData) do
-            if currentTime - data.lastUpdate > 60000 then
+            if lib.data.stale.isStale(data.lastUpdate, STALE_TIMEOUT) then
                 playerData[playerName] = nil
                 print("[INFO] Removed stale data for " .. playerName)
                 updateDisplay()

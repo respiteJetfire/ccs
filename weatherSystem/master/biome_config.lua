@@ -1,6 +1,11 @@
 -- weatherSystem/master/biome_config.lua
 -- Biome Configuration - Editable biome temperatures
 -- Unknown biomes are automatically added with default values
+--
+-- Note: This is a domain-specific module that contains biome temperature data.
+-- It does not depend on the shared lib as it handles Minecraft biome-specific
+-- temperature lookups and configuration persistence.
+
 local version = "1.0.0"
 
 local biomeConfig = {}

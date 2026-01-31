@@ -48,9 +48,19 @@ end
 -- Files to update: manager stays in folder, startup/updater copied to root
 local function updateScripts()
     local filesToUpdate = {
+        -- Script files
         { remote = "mffsDefense/manager.lua", local_ = "mffsDefense/manager.lua" },
         { remote = "mffsDefense/startup.lua", local_ = "startup.lua" },
         { remote = "mffsDefense/updater.lua", local_ = "updater.lua" },
+        -- Library dependencies
+        { remote = "lib/init.lua", local_ = "lib/init.lua" },
+        { remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua" },
+        { remote = "lib/peripherals/environment.lua", local_ = "lib/peripherals/environment.lua" },
+        { remote = "lib/peripherals/mffs.lua", local_ = "lib/peripherals/mffs.lua" },
+        { remote = "lib/format/time.lua", local_ = "lib/format/time.lua" },
+        { remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua" },
+        { remote = "lib/network/protocol.lua", local_ = "lib/network/protocol.lua" },
+        { remote = "lib/data/stale.lua", local_ = "lib/data/stale.lua" },
     }
 
     local updated = 0

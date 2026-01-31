@@ -1,6 +1,10 @@
 -- colourSign manager
 -- Connects to a monitor peripheral and displays a sign with colour config,
 -- arrow support, and colour-changing features.
+--
+-- Dependencies: lib (shared library for config, peripherals, display)
+
+local lib = dofile("lib/init.lua")
 
 local version = "0.2.0"
 print(string.format("[INFO] colourSign v%s starting...", version))
@@ -19,64 +23,63 @@ end
 local configPath = "colourSign/config.json"
 
 local function saveConfig(cfg)
-    if not fs.exists("colourSign") then fs.makeDir("colourSign") end
-    local f = fs.open(configPath, "w")
-    if f then
-        f.write(textutils.serialiseJSON(cfg))
-        f.close()
+    local ok, err = lib.config.manager.save(configPath, cfg)
+    if ok then
         print("[INFO] Config saved to " .. configPath)
     else
-        print("[WARN] Failed to open config path for writing: " .. configPath)
+        print("[WARN] Failed to save config: " .. tostring(err))
     end
 end
 
 local function loadConfigFromJson()
-    if not fs.exists(configPath) then return nil end
-    local f = fs.open(configPath, "r")
-    if not f then return nil end
-    local data = f.readAll()
-    f.close()
-    local ok, cfgTbl = pcall(textutils.unserialiseJSON, data)
-    if not ok or type(cfgTbl) ~= "table" then
-        print("[WARN] Failed to parse config.json; ignoring and starting wizard")
+    if not lib.config.manager.exists(configPath) then return nil end
+    local cfg, err = lib.config.manager.load(configPath)
+    if not cfg then
+        print("[WARN] Failed to parse config.json: " .. tostring(err))
         return nil
     end
-    return cfgTbl
+    return cfg
 end
 
 local function runWizard(defaults)
-    print("\nColourSign Configuration Wizard\nPress Enter to accept defaults in [brackets]\n")
-
-    local function ask(prompt, default)
-        if default ~= nil then
-            io.write(prompt .. " [" .. tostring(default) .. "]: ")
-        else
-            io.write(prompt .. ": ")
-        end
-        local res = read()
-        if res == nil or res == "" then return default end
-        return res
-    end
+    -- Use lib.config.wizard for interactive configuration
+    lib.config.wizard.header("ColourSign Configuration Wizard")
+    print("Press Enter to accept defaults in [brackets]\n")
 
     -- Lines (up to 3)
     local lines = {}
     for i = 1, 3 do
         local def = (defaults and defaults.lines and defaults.lines[i]) or ""
-        lines[i] = ask("Line " .. i, def) or ""
+        lines[i] = lib.config.wizard.ask("Line " .. i, def) or ""
     end
 
-    -- Arrow
-    local arrowDef = (defaults and defaults.arrow) or ""
-    local arrowAns = ask("Arrow (left,right,up,down or none)", arrowDef)
+    -- Arrow direction choice
+    local arrowChoices = {
+        {value = "none", label = "None"},
+        {value = "left", label = "Left (<)"},
+        {value = "right", label = "Right (>)"},
+        {value = "up", label = "Up (^)"},
+        {value = "down", label = "Down (v)"}
+    }
+    local arrowDefault = 1
+    if defaults and defaults.arrow then
+        for i, choice in ipairs(arrowChoices) do
+            if choice.value == defaults.arrow then
+                arrowDefault = i
+                break
+            end
+        end
+    end
+    local arrowAns = lib.config.wizard.askChoice("Arrow direction", arrowChoices, arrowDefault)
     local arrow = nil
-    if arrowAns and arrowAns ~= "" and arrowAns:lower() ~= "none" then arrow = arrowAns:lower() end
+    if arrowAns and arrowAns ~= "none" then arrow = arrowAns end
 
-    -- Colors (comma-separated)
+    -- Colors (comma-separated) - use standard ask for flexibility
     local colorDef = "white"
     if defaults and defaults.colors and #defaults.colors > 0 then
         colorDef = table.concat(defaults.colors, ",")
     end
-    local colorAns = ask("Colors (comma-separated)", colorDef)
+    local colorAns = lib.config.wizard.ask("Colors (comma-separated)", colorDef)
     local colors = {}
     for token in string.gmatch(colorAns or "", "([^,]+)") do
         token = token:match("^%s*(.-)%s*$")
@@ -86,25 +89,31 @@ local function runWizard(defaults)
 
     -- Cycle enabled
     local cycleDef = (defaults and defaults.cycle_enabled ~= nil) and defaults.cycle_enabled or true
-    local ceAns = ask("Enable colour cycling? (y/n)", cycleDef and "y" or "n")
-    local cycle_enabled = (tostring(ceAns or ""):lower():sub(1,1) == "y")
+    local cycle_enabled = lib.config.wizard.askYesNo("Enable colour cycling?", cycleDef)
 
     -- Cycle interval
     local ciDef = (defaults and defaults.cycle_interval) or 2
-    local ciAns = tonumber(ask("Cycle interval (seconds)", tostring(ciDef))) or ciDef
+    local ciAns = lib.config.wizard.askNumber("Cycle interval (seconds)", ciDef, 0.5, 60)
 
     -- Arrow blink
     local abDef = (defaults and defaults.arrow_blink ~= nil) and defaults.arrow_blink or true
-    local abAns = ask("Arrow blink? (y/n)", abDef and "y" or "n")
-    local arrow_blink = (tostring(abAns or ""):lower():sub(1,1) == "y")
+    local arrow_blink = lib.config.wizard.askYesNo("Arrow blink?", abDef)
 
     -- Arrow blink interval
     local abiDef = (defaults and defaults.arrow_blink_interval) or 1
-    local abiAns = tonumber(ask("Arrow blink interval (seconds)", tostring(abiDef))) or abiDef
+    local abiAns = lib.config.wizard.askNumber("Arrow blink interval (seconds)", abiDef, 0.1, 10)
 
-    -- Background color
-    local bgDef = (defaults and defaults.bg_color) or "black"
-    local bg = ask("Background color", bgDef)
+    -- Background color choice
+    local bgChoices = lib.display.colors.getColorNames()
+    local bgDef = 1
+    local defaultBg = (defaults and defaults.bg_color) or "black"
+    for i, name in ipairs(bgChoices) do
+        if name == defaultBg then
+            bgDef = i
+            break
+        end
+    end
+    local bg = lib.config.wizard.askChoice("Background color", bgChoices, bgDef) or "black"
 
     local cfg = {
         lines = lines,
@@ -140,15 +149,8 @@ cfg.arrow_blink_interval = cfg.arrow_blink_interval or 1
 cfg.bg_color = cfg.bg_color or "black"
 cfg.arrow_chars = cfg.arrow_chars or {left = "<", right = ">", up = "^", down = "v"}
 
--- Find monitor peripheral
-local monitorName, monitor
-for _, name in ipairs(peripheral.getNames()) do
-    if peripheral.getType(name) == "monitor" then
-        monitorName = name
-        monitor = peripheral.wrap(name)
-        break
-    end
-end
+-- Find monitor peripheral (required)
+local monitor, monitorName = lib.peripherals.monitor.findMonitor()
 
 if not monitor then
     error("No monitor peripheral found. Attach a monitor to use colourSign.")
@@ -160,25 +162,22 @@ print("[INFO] Using monitor: " .. monitorName)
 local renderer = dofile("colourSign/sign_renderer.lua")
 
 -- Find modem (optional) and open rednet for remote commands
-local modemSide
-for _, name in ipairs(peripheral.getNames()) do
-    if peripheral.getType(name) == "modem" then
-        modemSide = name
-        break
-    end
-end
+local modemSide = lib.peripherals.modem.findAnyModem()
 if modemSide then
-    pcall(rednet.open, modemSide)
-    print("[INFO] rednet open on: " .. modemSide)
+    local ok, err = lib.peripherals.modem.openRednet(modemSide)
+    if ok then
+        print("[INFO] rednet open on: " .. modemSide)
+    else
+        print("[WARN] Failed to open rednet: " .. tostring(err))
+        modemSide = nil
+    end
 else
     print("[WARN] No modem found; remote commands disabled.")
 end
 
--- Helper to map color names to colors.*
+-- Helper to map color names to colors.* (uses lib.display.colors)
 local function colorNameToColor(name)
-    local lower = (tostring(name) or ""):lower()
-    local ok, val = pcall(function() return colors[lower] end)
-    if ok and val then return val else return colors.white end
+    return lib.display.colors.parse(name, colors.white)
 end
 
 -- State

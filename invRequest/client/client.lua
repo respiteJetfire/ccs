@@ -1,16 +1,19 @@
 -- CC script to manage drawers to pull resources into chest via a rednet request (item id and quantity), modem is always on top, chest is always on the right, drawer is always below and item slot is 2)
+-- Dependencies: lib.peripherals.modem, lib.network.rednet
+local lib = dofile("lib/init.lua")
+
 local version = "0.2.1"
 local PASSWORD = "apple"
 print("[INFO] Drawer Manager v" .. version .. " starting...")
 print("[INFO] Opening rednet on top...")
-rednet.open("top")
+lib.peripherals.modem.openRednet("top")
 local chest = peripheral.wrap("right")
 local drawer = peripheral.wrap("bottom")
 local SLOT = 2
 print("[INFO] Chest wrapped on right, drawer wrapped on bottom, slot set to 2.")
 while true do
     print("[INFO] Waiting for rednet message...")
-    local senderId, message = rednet.receive()
+    local senderId, message = lib.network.rednet.receive()
     print("[RECV] From " .. tostring(senderId) .. ": " .. tostring(message))
     
     -- Check for password authentication
@@ -22,10 +25,10 @@ while true do
         local available = drawer.getItemDetail(SLOT)
         if available then
             local response = "Item: " .. available.name .. ", Count: " .. tostring(available.count)
-            rednet.send(senderId, response)
+            lib.network.rednet.send(senderId, response)
             print("[SEND] Info response sent: " .. response)
         else
-            rednet.send(senderId, "No items available in the drawer.")
+            lib.network.rednet.send(senderId, "No items available in the drawer.")
             print("[SEND] No items available response sent.")
         end
     else
@@ -53,7 +56,7 @@ while true do
                 print("[INFO] Total withdrawn: " .. tostring(totalWithdrawn))
                 if totalWithdrawn > 0 then
                     print("[INFO] Successfully transferred " .. tostring(totalWithdrawn) .. " of " .. itemId .. " into chest.")
-                    rednet.send(senderId, "Success: Withdrawn " .. totalWithdrawn .. " of " .. itemId)
+                    lib.network.rednet.send(senderId, "Success: Withdrawn " .. totalWithdrawn .. " of " .. itemId)
                     print("[SEND] Success response sent.")
                 else
                     print("[ERROR] Unable to withdraw items.")
@@ -62,7 +65,7 @@ while true do
                 print("[INFO] Item not available in drawer. Ignoring request.")
             end
         else
-            rednet.send(senderId, "Error: Invalid request format. Use 'item_id quantity'.")
+            lib.network.rednet.send(senderId, "Error: Invalid request format. Use 'item_id quantity'.")
             print("[ERROR] Invalid request format.")
         end
     end

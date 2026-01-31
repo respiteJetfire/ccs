@@ -2,23 +2,28 @@
 -- Weather Master Controller v5.0.0
 -- Master controls ALL forecasting - stations just register biome/position and display
 -- Global weather with biome-specific display (rain = snow in cold biomes)
-local version = "5.2.0"
+--
+-- Dependencies: lib (shared library)
+--   - lib.peripherals.modem: Wireless modem discovery and rednet management
+--   - lib.peripherals.environment: Environment detector discovery
+--   - lib.network.discovery: Service hosting
+--   - lib.network.rednet: Message sending/receiving
+--   - lib.network.protocol: Message creation
+--   - lib.data.tracking: Station tracking with staleness
+--   - lib.format.time: Minecraft time formatting
 
+local version = "5.3.0"
+
+-- Load shared library
+local lib = dofile("lib/init.lua")
 
 print("[INFO] Weather Master v" .. version .. " starting...")
 
--- Find environment detector
+-- Find environment detector using lib
 print("[INFO] Searching for environment detector...")
-local envDetector = nil
-for _, name in ipairs(peripheral.getNames()) do
-    local pType = peripheral.getType(name)
-    if pType == "environmentDetector" or (pType and pType:find("environment")) then
-        envDetector = peripheral.wrap(name)
-        break
-    end
-end
+local envDetector, envDetectorName = lib.peripherals.environment.findEnvironmentDetector()
 if envDetector then
-    print("[INFO] Environment detector found!")
+    print("[INFO] Environment detector found: " .. (envDetectorName or "unknown"))
 else
     print("[WARN] No environment detector found! Time sync and real weather unavailable.")
 end
@@ -31,8 +36,8 @@ else
     print("[INFO] Commands API not available - forecast only mode")
 end
 
--- Load modules
-local network = dofile("weatherSystem/master/api_network.lua")
+-- Load domain-specific modules (forecast and biome config contain weather logic)
+local network = dofile("weatherSystem/master/api_network.lua")  -- Thin wrapper for weather-specific protocols
 local forecast = dofile("weatherSystem/master/forecast.lua")
 
 -- Configuration
@@ -44,32 +49,45 @@ local CONFIG = {
     HOSTNAME = "weather_master"
 }
 
--- In-memory station tracking
-local stations = {}
+-- Station tracking using lib.data.tracking
+-- Timeout in milliseconds for station staleness
+local stationTracker = lib.data.tracking.createTracker(CONFIG.STATION_TIMEOUT * 1000, true)
 local currentForecast = nil
 
--- Initialize network
-local success, err = network.init()
+-- Initialize network using lib.peripherals.modem
+print("[INFO] Searching for wireless modem...")
+local modemSide, modemPeripheral = lib.peripherals.modem.findWirelessModem()
+if not modemSide then
+    error("[ERROR] No wireless modem found")
+end
+
+local success, err = lib.peripherals.modem.openRednet(modemSide)
 if not success then
     error("[ERROR] Failed to initialize network: " .. tostring(err))
 end
+print("[NET] Network initialized on " .. modemSide)
 
--- Host as weather master service
-network.host(CONFIG.HOSTNAME)
+-- Host as weather master service using lib.network.discovery
+local hostSuccess, hostErr = lib.network.discovery.host(CONFIG.HOSTNAME, network.MASTER_PROTOCOL)
+if not hostSuccess then
+    print("[WARN] Failed to host service: " .. tostring(hostErr))
+end
 
 print("[INFO] Network initialized, hosting as: " .. CONFIG.HOSTNAME)
 
 -- Check if station is active (seen recently)
-local function isStationActive(station)
-    if not station or not station.lastSeen then return false end
-    return (os.epoch("utc") - station.lastSeen) < (CONFIG.STATION_TIMEOUT * 1000)
+-- Uses lib.data.tracking for staleness detection
+local function isStationActive(stationId)
+    return not lib.data.tracking.isStale(stationTracker, tostring(stationId))
 end
 
--- Get active stations
+-- Get active stations using lib.data.tracking
 local function getActiveStations()
     local active = {}
-    for id, station in pairs(stations) do
-        if isStationActive(station) then
+    local allStations = lib.data.tracking.getAll(stationTracker, true)
+    for id, entry in pairs(allStations) do
+        local station = entry.value
+        if station then
             table.insert(active, {
                 id = station.id,
                 name = station.name,
@@ -77,7 +95,7 @@ local function getActiveStations()
                 dimension = station.dimension,
                 altitude = station.altitude,
                 position = station.position,
-                lastSeen = station.lastSeen,
+                lastSeen = entry.timestamp,
                 mobData = station.mobData
             })
         end
@@ -85,7 +103,20 @@ local function getActiveStations()
     return active
 end
 
+-- Helper to get all stations (including stale, for forecast module)
+local function getAllStations()
+    local all = {}
+    for _, key in ipairs(stationTracker.keys()) do
+        local station = lib.data.tracking.get(stationTracker, key, true)  -- Include stale
+        if station then
+            all[key] = station
+        end
+    end
+    return all
+end
+
 -- Process incoming station packets
+-- Uses lib.data.tracking for station management
 local function processStationPacket(senderId, packet)
     if not packet then return false end
     
@@ -101,11 +132,11 @@ local function processStationPacket(senderId, packet)
             dimension = packet.dimension or "minecraft:overworld",
             altitude = packet.altitude or 64,
             position = packet.position,
-            lastSeen = os.epoch("utc"),
             mobData = packet.mobData
         }
         
-        stations[stationId] = stationData
+        -- Track station using lib.data.tracking
+        lib.data.tracking.track(stationTracker, stationId, stationData)
         forecast.registerStation(stationId, stationData)
         
         print("[REG] Station " .. stationData.name .. " registered")
@@ -120,13 +151,17 @@ local function processStationPacket(senderId, packet)
         
     elseif packetType == "station_heartbeat" then
         -- Heartbeat with updated biome data
-        if stations[stationId] then
-            stations[stationId].lastSeen = os.epoch("utc")
-            if packet.biome then stations[stationId].biome = packet.biome end
-            if packet.dimension then stations[stationId].dimension = packet.dimension end
-            if packet.altitude then stations[stationId].altitude = packet.altitude end
-            if packet.position then stations[stationId].position = packet.position end
-            if packet.mobData then stations[stationId].mobData = packet.mobData end
+        local existingStation = lib.data.tracking.get(stationTracker, stationId, true)
+        if existingStation then
+            -- Update station data
+            if packet.biome then existingStation.biome = packet.biome end
+            if packet.dimension then existingStation.dimension = packet.dimension end
+            if packet.altitude then existingStation.altitude = packet.altitude end
+            if packet.position then existingStation.position = packet.position end
+            if packet.mobData then existingStation.mobData = packet.mobData end
+            
+            -- Re-track to update timestamp
+            lib.data.tracking.track(stationTracker, stationId, existingStation)
             
             -- Update forecast module
             forecast.updateStation(stationId, {
@@ -151,6 +186,7 @@ local function processStationPacket(senderId, packet)
 end
 
 -- Send forecast to a specific station
+-- Uses lib.network.rednet for sending
 function sendForecastToStation(computerId, stationId)
     if not currentForecast then return end
     
@@ -162,16 +198,15 @@ function sendForecastToStation(computerId, stationId)
     -- Build station list and mob data from active stations
     local stationList = {}
     local stationMobs = {}
-    for id, station in pairs(stations) do
-        if isStationActive(station) then
-            table.insert(stationList, {
-                id = id,
-                name = station.name,
-                biome = station.biome
-            })
-            if station.mobData then
-                stationMobs[tostring(id)] = station.mobData
-            end
+    local allStations = lib.data.tracking.getAll(stationTracker, false)
+    for id, station in pairs(allStations) do
+        table.insert(stationList, {
+            id = id,
+            name = station.name,
+            biome = station.biome
+        })
+        if station.mobData then
+            stationMobs[tostring(id)] = station.mobData
         end
     end
     
@@ -196,18 +231,22 @@ function sendForecastToStation(computerId, stationId)
         stationMobs = stationMobs
     }
     
-    network.send(computerId, response, network.STATION_PROTOCOL)
+    -- Use lib.network.rednet for sending
+    lib.network.rednet.send(computerId, response, network.STATION_PROTOCOL)
 end
 
 -- Generate and update forecast
+-- Uses getAllStations helper which wraps lib.data.tracking
 local function updateForecast()
     local activeStations = getActiveStations()
     
-    -- Generate forecast with registered station data
-    currentForecast = forecast.generate(stations)
+    -- Generate forecast with all station data (forecast module handles its own registration)
+    currentForecast = forecast.generate(getAllStations())
     
     if currentForecast then
-        print("[FORECAST] Updated: " .. (currentForecast.summary or "Unknown"))
+        -- Use lib.format.time for displaying time if needed
+        local timeStr = lib.format.time.formatMinecraftTime(currentForecast.gameTime * 1000)
+        print("[FORECAST] Updated at " .. timeStr .. ": " .. (currentForecast.summary or "Unknown"))
         print("[FORECAST] Season: " .. (currentForecast.season or "Unknown"))
         if currentForecast.current then
             print("[FORECAST] Temp: " .. tostring(currentForecast.current.temperature) .. "C")
@@ -234,9 +273,10 @@ local function broadcastForecast()
 end
 
 -- Network receive loop
+-- Uses lib.network.rednet for receiving messages
 local function receiveLoop()
     while true do
-        local senderId, message, protocol = network.receive(network.STATION_PROTOCOL, 10)
+        local senderId, message, protocol = lib.network.rednet.receive(network.STATION_PROTOCOL, 10)
         if senderId and message then
             processStationPacket(senderId, message)
         end
@@ -260,7 +300,7 @@ local function broadcastLoop()
 end
 
 -- Weather control loop (applies weather changes using commands API)
-
+-- Uses lib.data.tracking for station dimension lookup
 local function weatherControlLoop()
     if not hasCommandsAPI then
         print("[WEATHER] Weather control disabled (no commands API)")
@@ -274,8 +314,9 @@ local function weatherControlLoop()
     local function getActiveDimensions()
         local dims = {}
         local seen = {}
-        for id, station in pairs(stations) do
-            if isStationActive(station) and station.dimension then
+        local activeStations = lib.data.tracking.getAll(stationTracker, false)
+        for id, station in pairs(activeStations) do
+            if station.dimension then
                 local dim = station.dimension
                 if dim and not seen[dim] then
                     seen[dim] = true
@@ -388,4 +429,5 @@ else
 end
 
 -- Cleanup on exit
-network.close()
+-- Use lib.peripherals.modem for cleanup
+lib.peripherals.modem.closeRednet()

@@ -1,42 +1,38 @@
 -- CC script to receive and display energy data from energy master
 -- Automatically adapts display based on monitor size and orientation
-local version = "0.1.0"
+-- Refactored to use shared library (lib/init.lua)
+-- Dependencies: lib.peripherals.modem, lib.peripherals.monitor, lib.format.numbers,
+--               lib.network.rednet, lib.data.stale, lib.display.colors
+local version = "0.2.0"
+
+-- Load shared library
+local lib = dofile("lib/init.lua")
 
 print("[INFO] Energy Master Client v" .. version .. " starting...")
 
--- Find and open wireless modem for receiving
+-- Find and open wireless modem using lib
 print("[INFO] Searching for wireless modem...")
-local modemSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        modemSide = side
-        break
-    end
-end
+local modemSide, modem = lib.peripherals.modem.findWirelessModem()
 if not modemSide then
     error("[ERROR] No wireless modem found! Please attach an ender modem.")
 end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
-rednet.open(modemSide)
-
--- Find monitor (or use computer screen)
-print("[INFO] Searching for monitor...")
-local monitor = nil
-local monitorSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "monitor" then
-        monitor = peripheral.wrap(side)
-        monitorSide = side
-        break
-    end
+local success, err = lib.peripherals.modem.openRednet(modemSide)
+if not success then
+    error("[ERROR] Failed to open rednet: " .. tostring(err))
 end
-if not monitor then
+
+-- Find monitor using lib (or use computer screen)
+print("[INFO] Searching for monitor...")
+local monitor, displayType, monitorSide = lib.peripherals.monitor.findMonitorOrTerminal()
+if displayType == "terminal" then
     print("[INFO] No monitor found, using computer screen")
-    monitor = term.current()
-    monitorSide = "terminal"
 else
     print("[INFO] Monitor found on " .. monitorSide)
 end
+
+-- Stale data threshold (30 seconds)
+local STALE_TIMEOUT = 30000
 
 -- Store latest energy data
 local energyData = {
@@ -47,17 +43,18 @@ local energyData = {
     lastUpdate = 0
 }
 
--- Function to format energy numbers
-local function formatEnergy(value)
-    if value >= 1000000000 then
-        return string.format("%.2f GFE", value / 1000000000)
-    elseif value >= 1000000 then
-        return string.format("%.2f MFE", value / 1000000)
-    elseif value >= 1000 then
-        return string.format("%.2f KFE", value / 1000)
-    else
-        return string.format("%.0f FE", value)
-    end
+-- Helper function to get progress color using lib
+local function getProgressColor(percent)
+    return lib.display.colors.getProgressColor(percent)
+end
+
+-- Helper function to center text
+local function centerText(mon, y, text, textColor)
+    local w, _ = mon.getSize()
+    textColor = textColor or colors.white
+    mon.setCursorPos(math.floor((w - #text) / 2) + 1, y)
+    mon.setTextColor(textColor)
+    mon.write(text)
 end
 
 -- Function to draw text display (for very small monitors)
@@ -72,7 +69,7 @@ local function drawTextDisplay(w, h)
     if h >= 3 then
         monitor.setCursorPos(1, 3)
         monitor.setTextColor(colors.gray)
-        monitor.write(formatEnergy(energyData.totalEnergy))
+        monitor.write(lib.format.numbers.formatEnergy(energyData.totalEnergy))
     end
 end
 
@@ -85,26 +82,18 @@ local function drawBarDisplay(w, h)
     monitor.setTextColor(colors.white)
     monitor.setBackgroundColor(colors.black)
     local title = "ENERGY"
-    monitor.setCursorPos(math.floor((w - #title) / 2) + 1, 1)
-    monitor.write(title)
+    centerText(monitor, 1, title)
     
     -- Vertical bar
     local barHeight = h - 5
     local fillHeight = math.floor(barHeight * energyData.percentFull / 100)
+    local fillColor = getProgressColor(energyData.percentFull)
     
     for i = 1, barHeight do
         local line = h - 3 - i + 1
         monitor.setCursorPos(2, line)
         if i <= fillHeight then
-            if energyData.percentFull >= 75 then
-                monitor.setBackgroundColor(colors.lime)
-            elseif energyData.percentFull >= 50 then
-                monitor.setBackgroundColor(colors.yellow)
-            elseif energyData.percentFull >= 25 then
-                monitor.setBackgroundColor(colors.orange)
-            else
-                monitor.setBackgroundColor(colors.red)
-            end
+            monitor.setBackgroundColor(fillColor)
         else
             monitor.setBackgroundColor(colors.gray)
         end
@@ -113,18 +102,13 @@ local function drawBarDisplay(w, h)
     
     -- Percentage
     monitor.setBackgroundColor(colors.black)
-    monitor.setCursorPos(1, h - 2)
-    monitor.setTextColor(colors.white)
     local pct = string.format("%.1f%%", energyData.percentFull)
-    monitor.setCursorPos(math.floor((w - #pct) / 2) + 1, h - 2)
-    monitor.write(pct)
+    centerText(monitor, h - 2, pct)
     
-    -- Current/Max
-    monitor.setCursorPos(1, h)
+    -- Current energy
     monitor.setTextColor(colors.lightGray)
-    local energyText = formatEnergy(energyData.totalEnergy)
-    monitor.setCursorPos(math.floor((w - #energyText) / 2) + 1, h)
-    monitor.write(energyText)
+    local energyText = lib.format.numbers.formatEnergy(energyData.totalEnergy)
+    centerText(monitor, h, energyText, colors.lightGray)
 end
 
 -- Function to draw horizontal bar display (for wide short monitors)
@@ -140,21 +124,14 @@ local function drawHorizontalBarDisplay(w, h)
     -- Horizontal bar
     local barWidth = w - 4
     local fillWidth = math.floor(barWidth * energyData.percentFull / 100)
+    local fillColor = getProgressColor(energyData.percentFull)
     
     monitor.setCursorPos(2, math.floor(h / 2))
     monitor.setBackgroundColor(colors.gray)
     monitor.write(string.rep(" ", barWidth))
     
     monitor.setCursorPos(2, math.floor(h / 2))
-    if energyData.percentFull >= 75 then
-        monitor.setBackgroundColor(colors.lime)
-    elseif energyData.percentFull >= 50 then
-        monitor.setBackgroundColor(colors.yellow)
-    elseif energyData.percentFull >= 25 then
-        monitor.setBackgroundColor(colors.orange)
-    else
-        monitor.setBackgroundColor(colors.red)
-    end
+    monitor.setBackgroundColor(fillColor)
     monitor.write(string.rep(" ", fillWidth))
     
     -- Stats
@@ -163,8 +140,8 @@ local function drawHorizontalBarDisplay(w, h)
     monitor.setTextColor(colors.white)
     monitor.write(string.format("%.1f%% | %s / %s | %d devices", 
         energyData.percentFull,
-        formatEnergy(energyData.totalEnergy),
-        formatEnergy(energyData.totalMaxEnergy),
+        lib.format.numbers.formatEnergy(energyData.totalEnergy),
+        lib.format.numbers.formatEnergy(energyData.totalMaxEnergy),
         energyData.deviceCount))
 end
 
@@ -177,8 +154,7 @@ local function drawBatteryDisplay(w, h)
     monitor.setTextColor(colors.white)
     monitor.setBackgroundColor(colors.black)
     local title = "ENERGY STORAGE"
-    monitor.setCursorPos(math.floor((w - #title) / 2) + 1, 1)
-    monitor.write(title)
+    centerText(monitor, 1, title)
     
     -- Battery outline (ASCII art style)
     local batteryWidth = math.min(w - 4, 30)
@@ -191,7 +167,9 @@ local function drawBatteryDisplay(w, h)
     monitor.setBackgroundColor(colors.gray)
     monitor.write("     ")
     
-    -- Battery body
+    -- Battery body with fill color from lib
+    local fillColor = getProgressColor(energyData.percentFull)
+    
     for i = 1, batteryHeight do
         monitor.setCursorPos(startX, startY + i)
         monitor.setBackgroundColor(colors.gray)
@@ -199,15 +177,7 @@ local function drawBatteryDisplay(w, h)
         
         local fillHeight = math.floor(batteryHeight * energyData.percentFull / 100)
         if batteryHeight - i < fillHeight then
-            if energyData.percentFull >= 75 then
-                monitor.setBackgroundColor(colors.lime)
-            elseif energyData.percentFull >= 50 then
-                monitor.setBackgroundColor(colors.yellow)
-            elseif energyData.percentFull >= 25 then
-                monitor.setBackgroundColor(colors.orange)
-            else
-                monitor.setBackgroundColor(colors.red)
-            end
+            monitor.setBackgroundColor(fillColor)
         else
             monitor.setBackgroundColor(colors.black)
         end
@@ -219,22 +189,16 @@ local function drawBatteryDisplay(w, h)
     
     -- Stats below battery
     monitor.setBackgroundColor(colors.black)
-    monitor.setCursorPos(1, h - 3)
-    monitor.setTextColor(colors.white)
     local pct = string.format("%.1f%%", energyData.percentFull)
-    monitor.setCursorPos(math.floor((w - #pct) / 2) + 1, h - 3)
-    monitor.write(pct)
+    centerText(monitor, h - 3, pct)
     
-    monitor.setCursorPos(1, h - 1)
-    monitor.setTextColor(colors.lightGray)
-    local stats = string.format("%s / %s", formatEnergy(energyData.totalEnergy), formatEnergy(energyData.totalMaxEnergy))
-    monitor.setCursorPos(math.floor((w - #stats) / 2) + 1, h - 1)
-    monitor.write(stats)
+    local stats = string.format("%s / %s", 
+        lib.format.numbers.formatEnergy(energyData.totalEnergy), 
+        lib.format.numbers.formatEnergy(energyData.totalMaxEnergy))
+    centerText(monitor, h - 1, stats, colors.lightGray)
     
-    monitor.setCursorPos(1, h)
     local devices = string.format("%d devices", energyData.deviceCount)
-    monitor.setCursorPos(math.floor((w - #devices) / 2) + 1, h)
-    monitor.write(devices)
+    centerText(monitor, h, devices, colors.lightGray)
 end
 
 -- Function to draw pie chart display (for large monitors)
@@ -246,13 +210,15 @@ local function drawPieChartDisplay(w, h)
     monitor.setTextColor(colors.white)
     monitor.setBackgroundColor(colors.black)
     local title = "ENERGY STORAGE SYSTEM"
-    monitor.setCursorPos(math.floor((w - #title) / 2) + 1, 1)
-    monitor.write(title)
+    centerText(monitor, 1, title)
     
     -- Calculate center and radius for pie chart
     local centerX = math.floor(w / 2)
     local centerY = math.floor(h / 2)
     local radius = math.min(math.floor(w / 3), math.floor(h / 2) - 3)
+    
+    -- Get fill color from lib
+    local fillColor = getProgressColor(energyData.percentFull)
     
     -- Draw filled/empty sections
     for y = -radius, radius do
@@ -264,15 +230,7 @@ local function drawPieChartDisplay(w, h)
                 
                 monitor.setCursorPos(centerX + math.floor(x / 2), centerY + y)
                 if angle <= fillAngle or (angle < -math.pi / 2 and fillAngle > 3 * math.pi / 2 - 2 * math.pi + angle) then
-                    if energyData.percentFull >= 75 then
-                        monitor.setBackgroundColor(colors.lime)
-                    elseif energyData.percentFull >= 50 then
-                        monitor.setBackgroundColor(colors.yellow)
-                    elseif energyData.percentFull >= 25 then
-                        monitor.setBackgroundColor(colors.orange)
-                    else
-                        monitor.setBackgroundColor(colors.red)
-                    end
+                    monitor.setBackgroundColor(fillColor)
                 else
                     monitor.setBackgroundColor(colors.gray)
                 end
@@ -283,22 +241,16 @@ local function drawPieChartDisplay(w, h)
     
     -- Stats
     monitor.setBackgroundColor(colors.black)
-    monitor.setCursorPos(1, h - 3)
-    monitor.setTextColor(colors.white)
     local pct = string.format("%.1f%% Full", energyData.percentFull)
-    monitor.setCursorPos(math.floor((w - #pct) / 2) + 1, h - 3)
-    monitor.write(pct)
+    centerText(monitor, h - 3, pct)
     
-    monitor.setCursorPos(1, h - 1)
-    monitor.setTextColor(colors.lightGray)
-    local stats = string.format("Stored: %s / %s", formatEnergy(energyData.totalEnergy), formatEnergy(energyData.totalMaxEnergy))
-    monitor.setCursorPos(math.floor((w - #stats) / 2) + 1, h - 1)
-    monitor.write(stats)
+    local stats = string.format("Stored: %s / %s", 
+        lib.format.numbers.formatEnergy(energyData.totalEnergy), 
+        lib.format.numbers.formatEnergy(energyData.totalMaxEnergy))
+    centerText(monitor, h - 1, stats, colors.lightGray)
     
-    monitor.setCursorPos(1, h)
     local devices = string.format("Monitoring %d devices", energyData.deviceCount)
-    monitor.setCursorPos(math.floor((w - #devices) / 2) + 1, h)
-    monitor.write(devices)
+    centerText(monitor, h, devices, colors.lightGray)
 end
 
 -- Function to determine and draw appropriate display
@@ -324,30 +276,28 @@ local function updateDisplay()
     end
 end
 
--- Function to listen for energy broadcasts
+-- Function to listen for energy broadcasts using lib
 local function listenForUpdates()
     while true do
-        local senderId, message, protocol = rednet.receive("energy_master", 1)
-        if message then
-            local success, data = pcall(textutils.unserialize, message)
-            if success and data and data.type == "energy_status" then
-                energyData.totalEnergy = data.totalEnergy
-                energyData.totalMaxEnergy = data.totalMaxEnergy
-                energyData.percentFull = data.percentFull
-                energyData.deviceCount = data.deviceCount
-                energyData.lastUpdate = os.epoch("utc")
-                
-                print(string.format("[UPDATE] %s / %s (%.1f%%)", 
-                    formatEnergy(energyData.totalEnergy),
-                    formatEnergy(energyData.totalMaxEnergy),
-                    energyData.percentFull))
-                
-                updateDisplay()
-            end
+        -- Use lib for receiving (auto-deserializes)
+        local senderId, message, protocol = lib.network.rednet.receive("energy_master", 1)
+        if senderId and message and message.type == "energy_status" then
+            energyData.totalEnergy = message.totalEnergy
+            energyData.totalMaxEnergy = message.totalMaxEnergy
+            energyData.percentFull = message.percentFull
+            energyData.deviceCount = message.deviceCount
+            energyData.lastUpdate = os.epoch("utc")
+            
+            print(string.format("[UPDATE] %s / %s (%.1f%%)", 
+                lib.format.numbers.formatEnergy(energyData.totalEnergy),
+                lib.format.numbers.formatEnergy(energyData.totalMaxEnergy),
+                energyData.percentFull))
+            
+            updateDisplay()
         end
         
-        -- Check if data is stale
-        if os.epoch("utc") - energyData.lastUpdate > 30000 then
+        -- Check if data is stale using lib
+        if lib.data.stale.isStale(energyData.lastUpdate, STALE_TIMEOUT) then
             monitor.clear()
             monitor.setCursorPos(1, 1)
             monitor.setTextColor(colors.red)

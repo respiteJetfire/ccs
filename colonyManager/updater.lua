@@ -44,10 +44,17 @@ end
 -- main method to call functions
 local function updateScripts()
     local filesToUpdate = {
+        -- Script files
         {remote = "colonyManager/startup.lua", local_ = "startup.lua"},
         {remote = "colonyManager/updater.lua", local_ = "updater.lua"},
         {remote = "colonyManager/manager.lua", local_ = "colonyManager/manager.lua"},
-        -- add more files as needed
+        -- Library dependencies
+        {remote = "lib/init.lua", local_ = "lib/init.lua"},
+        {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+        {remote = "lib/peripherals/colony.lua", local_ = "lib/peripherals/colony.lua"},
+        {remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua"},
+        {remote = "lib/network/protocol.lua", local_ = "lib/network/protocol.lua"},
+        {remote = "lib/data/tracking.lua", local_ = "lib/data/tracking.lua"},
     }
 
     local updated = 0

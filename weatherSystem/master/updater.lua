@@ -42,12 +42,22 @@ end
 
 local function updateScripts()
     local filesToUpdate = {
+        -- Script files
         {remote = "weatherSystem/master/startup.lua", local_ = "startup.lua"},
         {remote = "weatherSystem/master/updater.lua", local_ = "updater.lua"},
         {remote = "weatherSystem/master/master.lua", local_ = "weatherSystem/master/master.lua"},
         {remote = "weatherSystem/master/forecast.lua", local_ = "weatherSystem/master/forecast.lua"},
         {remote = "weatherSystem/master/api_network.lua", local_ = "weatherSystem/master/api_network.lua"},
         {remote = "weatherSystem/master/biome_config.lua", local_ = "weatherSystem/master/biome_config.lua"},
+        -- Library dependencies
+        {remote = "lib/init.lua", local_ = "lib/init.lua"},
+        {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+        {remote = "lib/peripherals/environment.lua", local_ = "lib/peripherals/environment.lua"},
+        {remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua"},
+        {remote = "lib/network/protocol.lua", local_ = "lib/network/protocol.lua"},
+        {remote = "lib/network/discovery.lua", local_ = "lib/network/discovery.lua"},
+        {remote = "lib/format/time.lua", local_ = "lib/format/time.lua"},
+        {remote = "lib/data/tracking.lua", local_ = "lib/data/tracking.lua"},
     }
 
     local success = 0

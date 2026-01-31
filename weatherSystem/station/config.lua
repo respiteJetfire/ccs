@@ -1,6 +1,10 @@
 -- weatherSystem/station/config.lua
 -- Configuration for Weather Station with Integrated Display
+-- Dependencies: lib (config.manager)
 local version = "7.1.0"
+
+-- Load shared library for config management
+local lib = dofile("lib/init.lua")
 
 local config = {
     -- Station identification
@@ -217,40 +221,39 @@ local function interactiveSetup()
     os.pullEvent("key")
 end
 
--- Function to load custom config from file
+-- Function to load custom config from file using lib.config.manager
 function config.load()
     -- Set default name first
     if not config.STATION_NAME then
         config.STATION_NAME = "Weather Station " .. tostring(config.STATION_ID)
     end
     
+    local configPath = "weatherSystem/station/station_config.json"
+    
     -- Check if config exists - if not, run interactive setup
-    if not fs.exists("weatherSystem/station/station_config.json") then
+    if not lib.config.manager.exists(configPath) then
         print("[CONFIG] No configuration found - starting setup...")
         sleep(1)
         interactiveSetup()
         config.save()
     else
-        -- Load config file
-        local file = fs.open("weatherSystem/station/station_config.json", "r")
-        if file then
-            local data = file.readAll()
-            file.close()
-            local loaded = textutils.unserialiseJSON(data)
-            if loaded then
-                -- Merge COLONY settings to preserve defaults
-                if loaded.COLONY and type(loaded.COLONY) == "table" then
-                    for k, v in pairs(loaded.COLONY) do
-                        config.COLONY[k] = v
-                    end
-                    loaded.COLONY = nil
+        -- Load config file using lib.config.manager
+        local loaded, loadErr = lib.config.manager.load(configPath, {})
+        if loaded then
+            -- Merge COLONY settings to preserve defaults
+            if loaded.COLONY and type(loaded.COLONY) == "table" then
+                for k, v in pairs(loaded.COLONY) do
+                    config.COLONY[k] = v
                 end
-
-                for k, v in pairs(loaded) do
-                    config[k] = v
-                end
-                print("[CONFIG] Loaded custom configuration")
+                loaded.COLONY = nil
             end
+
+            for k, v in pairs(loaded) do
+                config[k] = v
+            end
+            print("[CONFIG] Loaded custom configuration")
+        elseif loadErr then
+            print("[CONFIG] Warning: " .. tostring(loadErr))
         end
     end
     
@@ -266,25 +269,26 @@ function config.load()
     end
 end
 
--- Function to save current config
+-- Function to save current config using lib.config.manager
 function config.save()
-    local file = fs.open("weatherSystem/station/station_config.json", "w")
-    if file then
-        local saveData = {
-            STATION_ID = config.STATION_ID,
-            STATION_NAME = config.STATION_NAME,
-            CUSTOM_NAME = config.CUSTOM_NAME,
-            CHANNEL = config.CHANNEL,
-            COLLECT_INTERVAL = config.COLLECT_INTERVAL,
-            SEND_INTERVAL = config.SEND_INTERVAL,
-            LOCATION = config.LOCATION,
-            DISPLAY = config.DISPLAY,
-            COLONY = config.COLONY,
-            MOBS = config.MOBS
-        }
-        file.write(textutils.serialiseJSON(saveData))
-        file.close()
+    local saveData = {
+        STATION_ID = config.STATION_ID,
+        STATION_NAME = config.STATION_NAME,
+        CUSTOM_NAME = config.CUSTOM_NAME,
+        CHANNEL = config.CHANNEL,
+        COLLECT_INTERVAL = config.COLLECT_INTERVAL,
+        SEND_INTERVAL = config.SEND_INTERVAL,
+        LOCATION = config.LOCATION,
+        DISPLAY = config.DISPLAY,
+        COLONY = config.COLONY,
+        MOBS = config.MOBS
+    }
+    
+    local success, err = lib.config.manager.save("weatherSystem/station/station_config.json", saveData)
+    if success then
         print("[CONFIG] Configuration saved")
+    else
+        print("[CONFIG] Failed to save: " .. tostring(err))
     end
 end
 

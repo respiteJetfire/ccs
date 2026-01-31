@@ -1,21 +1,19 @@
 -- CC script to request items from drawer managers via rednet
+-- Dependencies: lib.peripherals.modem, lib.network.rednet
+local lib = dofile("lib/init.lua")
+
 local version = "0.2.1"
 local PASSWORD = "apple"
 print("[INFO] Item Request Manager v" .. version .. " starting...")
 
+-- Use shared library for modem discovery and rednet initialization
 print("[INFO] Searching for available modem...")
-local modemSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        modemSide = side
-        break
-    end
-end
+local modemSide = lib.peripherals.modem.findWirelessModem()
 if not modemSide then
     error("[ERROR] No wireless modem found! Please attach a modem.")
 end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
-rednet.open(modemSide)
+lib.peripherals.modem.openRednet(modemSide)
 print("[INFO] Rednet opened. Ready to request items.")
 
 while true do
@@ -28,7 +26,7 @@ while true do
     elseif itemId:lower() == "info" then
         local request = PASSWORD .. " info"
         print("[INFO] Broadcasting info check request...")
-        rednet.broadcast(request)
+        lib.network.rednet.broadcast(request)
         
         print("[INFO] Waiting for responses (timeout: 5 seconds)...")
         local timeout = os.startTimer(5)
@@ -55,10 +53,10 @@ while true do
         else
             local request = PASSWORD .. " " .. itemId .. " " .. tostring(quantity)
             print("[INFO] Broadcasting request: " .. itemId .. " " .. tostring(quantity))
-            rednet.broadcast(request)
+            lib.network.rednet.broadcast(request)
             
             print("[INFO] Waiting for response (timeout: 5 seconds)...")
-            local senderId, response = rednet.receive(5)
+            local senderId, response = lib.network.rednet.receive(5)
             
             if senderId then
                 print("[RECV] Response from " .. tostring(senderId) .. ": " .. tostring(response))

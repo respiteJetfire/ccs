@@ -1,6 +1,19 @@
 -- CC script to automatically control MFFS peripherals based on time and mob detection
 -- Monitors power levels and activates defenses when needed
-local version = "0.3.1"
+--
+-- Dependencies:
+--   lib.peripherals.modem   - Wireless modem discovery and rednet management
+--   lib.peripherals.environment - Environment detector and hostile mob scanning
+--   lib.peripherals.mffs     - MFFS peripheral discovery
+--   lib.format.time          - Minecraft time formatting and nighttime detection
+--   lib.network.rednet       - Network message receiving
+--   lib.network.protocol     - Message parsing
+--   lib.data.stale           - Data staleness detection
+
+local version = "0.4.0"
+
+-- Load shared library
+local lib = dofile("lib/init.lua")
 local CHECK_INTERVAL = 2  -- seconds between checks
 local MOB_DETECTION_RANGE = 30  -- blocks
 local MIN_POWER_PERCENT = 50  -- minimum power % to activate defenses
@@ -17,63 +30,43 @@ local POWER_SIDE = "right"           -- Side for capacitor/deriver redstone
 print("[INFO] Projector redstone side: " .. PROJECTOR_SIDE)
 print("[INFO] Power device redstone side: " .. POWER_SIDE)
 
--- Find and open wireless modem for receiving energy data
+-- Find and open wireless modem for receiving energy data (using lib.peripherals.modem)
 print("[INFO] Searching for wireless modem...")
-local wirelessModemSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        wirelessModemSide = side
-        break
-    end
-end
+local wirelessModemSide = lib.peripherals.modem.findWirelessModem()
 if not wirelessModemSide then
     error("[ERROR] No wireless modem found! Please attach an ender modem.")
 end
 print("[INFO] Opening rednet on " .. wirelessModemSide .. " for energy monitoring...")
-rednet.open(wirelessModemSide)
-
--- Find environment detector
-print("[INFO] Searching for environment detector...")
-local envDetector = nil
-local envDetectorName = nil
-for _, name in ipairs(peripheral.getNames()) do
-    local pType = peripheral.getType(name)
-    if pType == "environmentDetector" then
-        envDetector = peripheral.wrap(name)
-        envDetectorName = name
-        print("[INFO] Found environment detector: " .. name)
-        break
-    end
+local openSuccess, openErr = lib.peripherals.modem.openRednet(wirelessModemSide)
+if not openSuccess then
+    error("[ERROR] Failed to open rednet: " .. tostring(openErr))
 end
+
+-- Find environment detector (using lib.peripherals.environment)
+print("[INFO] Searching for environment detector...")
+local envDetector, envDetectorName = lib.peripherals.environment.findEnvironmentDetector()
 if not envDetector then
     error("[ERROR] No environment detector found! Please attach an Advanced Peripherals environment detector.")
 end
+print("[INFO] Found environment detector: " .. envDetectorName)
 
--- Find all MFFS peripherals
+-- Find all MFFS peripherals (using lib.peripherals.mffs)
 print("[INFO] Searching for MFFS peripherals...")
 local mffsProjectors = {}  -- Projectors controlled by threat detection
 local mffsPowerDevices = {}  -- Capacitors and derivers - always on when power > 50%
-for _, name in ipairs(peripheral.getNames()) do
-    local pType = peripheral.getType(name)
-    local pTypeLower = pType:lower()
-    
-    -- Check for MFFS devices
-    if pTypeLower:find("mffs") or pTypeLower:find("forcefield") then
-        local device = peripheral.wrap(name)
-        
-        -- Separate power infrastructure from projectors
-        if pTypeLower:find("capacitor") or pTypeLower:find("deriver") or pTypeLower:find("fortron") then
-            table.insert(mffsPowerDevices, {name = name, type = pType, peripheral = device})
-            print("[INFO] Added MFFS power device (always-on): " .. name .. " (" .. pType .. ")")
-        elseif pTypeLower:find("projector") then
-            table.insert(mffsProjectors, {name = name, type = pType, peripheral = device})
-            print("[INFO] Added MFFS projector (threat-activated): " .. name .. " (" .. pType .. ")")
-        else
-            -- Default to projector category for unknown MFFS devices
-            table.insert(mffsProjectors, {name = name, type = pType, peripheral = device})
-            print("[INFO] Added MFFS device (threat-activated): " .. name .. " (" .. pType .. ")")
-        end
-    end
+
+-- Find projectors using lib
+local foundProjectors = lib.peripherals.mffs.findMFFSProjectors()
+for _, proj in ipairs(foundProjectors) do
+    table.insert(mffsProjectors, {name = proj.name, type = "projector", peripheral = proj.peripheral})
+    print("[INFO] Added MFFS projector (threat-activated): " .. proj.name)
+end
+
+-- Find capacitors using lib
+local foundCapacitors = lib.peripherals.mffs.findMFFSCapacitors()
+for _, cap in ipairs(foundCapacitors) do
+    table.insert(mffsPowerDevices, {name = cap.name, type = "capacitor", peripheral = cap.peripheral})
+    print("[INFO] Added MFFS power device (always-on): " .. cap.name)
 end
 
 if #mffsProjectors == 0 and #mffsPowerDevices == 0 then
@@ -92,70 +85,44 @@ local latestEnergyData = {
 -- Current defense state
 local defensesActive = false
 
--- Function to check if it's nighttime
-local function isNighttime()
-    -- Prefer Minecraft tick time if possible
-    local time = nil
+-- Energy data staleness threshold (30 seconds)
+local ENERGY_STALE_THRESHOLD = 30 * 1000
+
+-- Function to get current Minecraft time in ticks
+local function getCurrentTimeTicks()
     if envDetector and envDetector.getTime then
         local ok, result = pcall(envDetector.getTime)
         if ok and type(result) == "number" then
-            time = result % 24000  -- Get time of day (0-23999)
+            return result % 24000
         end
     end
-    -- fallback: try envDetector.isNight
-    if time == nil and envDetector and envDetector.isNight then
-        local ok, result = pcall(envDetector.isNight)
-        if ok and type(result) == "boolean" then
-            return result
-        end
-    end
-    -- fallback: convert os.time() (0-24) to ticks (0-23999)
-    if time == nil then
-        local hour = os.time()
-        time = (hour / 24) * 24000
-    end
-    print("[DEBUG] Current Minecraft time: " .. tostring(time))
-    return time >= 13000 and time < 23000
+    -- Fallback: convert os.time() (0-24) to ticks (0-23999)
+    local hour = os.time()
+    return math.floor((hour / 24) * 24000)
 end
 
--- Function to scan for hostile mobs
+-- Function to check if it's nighttime (using lib.format.time)
+local function isNighttime()
+    local ticks = getCurrentTimeTicks()
+    print("[DEBUG] Current Minecraft time: " .. tostring(ticks))
+    return lib.format.time.isNighttime(ticks)
+end
+
+-- Function to scan for hostile mobs (using lib.peripherals.environment)
 local function detectHostileMobs()
     if not envDetector then
         return false, 0
     end
     
-    local success, entities = pcall(envDetector.scanEntities, MOB_DETECTION_RANGE)
-    if not success then
-        print("[WARN] Failed to scan entities: " .. tostring(entities))
+    local hostiles, err = lib.peripherals.environment.scanForHostiles(envDetector, MOB_DETECTION_RANGE)
+    if not hostiles then
+        print("[WARN] Failed to scan entities: " .. tostring(err))
         return false, 0
     end
     
-    if not entities or #entities == 0 then
-        return false, 0
-    end
-    
-    -- List of hostile mob types
-    local hostileMobs = {
-        "zombie", "skeleton", "creeper", "spider", "enderman",
-        "witch", "blaze", "ghast", "slime", "magma_cube",
-        "phantom", "drowned", "husk", "stray", "wither_skeleton",
-        "piglin", "hoglin", "zoglin", "vindicator", "evoker",
-        "pillager", "ravager", "vex", "guardian", "elder_guardian",
-        "shulker", "silverfish", "endermite", "cave_spider"
-    }
-    
-    local hostileCount = 0
-    for _, entity in ipairs(entities) do
-        if entity.name then
-            local entityNameLower = entity.name:lower()
-            for _, hostileMob in ipairs(hostileMobs) do
-                if entityNameLower:find(hostileMob) then
-                    hostileCount = hostileCount + 1
-                    print("[DETECT] Hostile mob detected: " .. entity.name)
-                    break
-                end
-            end
-        end
+    local hostileCount = #hostiles
+    for _, hostile in ipairs(hostiles) do
+        print("[DETECT] Hostile mob detected: " .. hostile.name)
     end
     
     return hostileCount > 0, hostileCount
@@ -189,20 +156,28 @@ local function deactivateDefenses()
     defensesActive = false
 end
 
--- Function to listen for energy updates (non-blocking)
+-- Function to listen for energy updates (using lib.network.rednet and lib.network.protocol)
 local function checkEnergyUpdate()
-    local senderId, message, protocol = rednet.receive("energy_master", 0.1)
-    if message then
-        local success, data = pcall(textutils.unserialize, message)
-        if success and data and data.type == "energy_status" then
-            latestEnergyData.percentFull = data.percentFull
-            latestEnergyData.lastUpdate = os.epoch("utc")
+    local senderId, message, protocol, err = lib.network.rednet.receive("energy_master", 0.1)
+    if senderId and message then
+        -- Parse the message using protocol library
+        local data, parseErr = lib.network.protocol.parseMessage(message)
+        if data and data.type == "energy_status" then
+            latestEnergyData.percentFull = data.percentFull or data.data and data.data.percentFull or 0
+            latestEnergyData.lastUpdate = lib.data.stale.getCurrentTime()
         end
     end
 end
 
--- Function to evaluate defense conditions
+-- Function to evaluate defense conditions (using lib.data.stale for staleness check)
 local function evaluateDefenseConditions()
+    -- Check if energy data is stale (using lib.data.stale)
+    local isEnergyStale = lib.data.stale.isStale(latestEnergyData.lastUpdate, ENERGY_STALE_THRESHOLD)
+    if isEnergyStale and latestEnergyData.lastUpdate > 0 then
+        print("[WARN] Energy data is stale, last update: " .. 
+            string.format("%.1fs ago", lib.data.stale.getAgeSeconds(latestEnergyData.lastUpdate)))
+    end
+    
     -- First check if we have enough power
     if latestEnergyData.percentFull < MIN_POWER_PERCENT then
         if defensesActive then
@@ -227,12 +202,9 @@ local function evaluateDefenseConditions()
     return false, "All clear"
 end
 
--- Helper to format Minecraft time as HH:MM
+-- Helper to format Minecraft time as HH:MM (using lib.format.time)
 local function formatMcTime(t)
-    -- t is 0-23999, 0 = 6:00, 6000 = 12:00, 18000 = 0:00
-    local hours = math.floor((t + 6000) / 1000) % 24
-    local mins = math.floor(((t % 1000) / 1000) * 60)
-    return string.format("%02d:%02d", hours, mins)
+    return lib.format.time.formatMinecraftTime(t)
 end
 
 -- Main monitoring loop
@@ -260,8 +232,8 @@ while true do
         end
     end
     
-    -- Status display
-    local mcTime = (envDetector and envDetector.getTime and (envDetector.getTime() % 24000)) or os.time()
+    -- Status display (using lib.format.time for formatting)
+    local mcTime = getCurrentTimeTicks()
     local mcTimeStr = formatMcTime(mcTime)
     local statusColor = defensesActive and "[ACTIVE]" or "[STANDBY]"
     local powerStatus = latestEnergyData.percentFull >= MIN_POWER_PERCENT and "ON" or "OFF"

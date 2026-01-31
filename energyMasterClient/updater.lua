@@ -44,10 +44,18 @@ end
 -- main method to call functions
 local function updateScripts()
     local filesToUpdate = {
+        -- Script files
         {remote = "energyMasterClient/startup.lua", local_ = "startup.lua"},
         {remote = "energyMasterClient/updater.lua", local_ = "updater.lua"},
         {remote = "energyMasterClient/client.lua", local_ = "energyMasterClient/client.lua"},
-        -- add more files as needed
+        -- Library dependencies
+        {remote = "lib/init.lua", local_ = "lib/init.lua"},
+        {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+        {remote = "lib/peripherals/monitor.lua", local_ = "lib/peripherals/monitor.lua"},
+        {remote = "lib/format/numbers.lua", local_ = "lib/format/numbers.lua"},
+        {remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua"},
+        {remote = "lib/data/stale.lua", local_ = "lib/data/stale.lua"},
+        {remote = "lib/display/colors.lua", local_ = "lib/display/colors.lua"},
     }
 
     local updated = 0

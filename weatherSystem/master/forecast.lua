@@ -2,6 +2,11 @@
 -- Weather Forecast Engine v6.0.0
 -- 120-day deterministic forecast with realistic weather patterns
 -- Storm systems, fronts, and biome-specific conditions
+--
+-- Note: This is a domain-specific module that contains weather forecasting logic.
+-- It does not depend on the shared lib as it handles weather-specific calculations.
+-- The forecast data structures are consumed by the master.lua controller.
+
 local version = "6.1.0"
 
 local forecast = {}

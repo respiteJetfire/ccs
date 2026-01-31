@@ -1,60 +1,69 @@
 -- CC script to automatically monitor colony requests and fulfill via rednet
 -- Uses MineColonies colony peripheral for ComputerCraft 1.20.1
+-- Dependencies: lib.peripherals.modem, lib.peripherals.colony, lib.data.tracking,
+--               lib.network.rednet, lib.network.protocol
 local version = "0.3.0"
 local PASSWORD = "apple"
 local CHECK_INTERVAL = 10  -- seconds between checks
 
+-- Load shared library
+local lib = dofile("lib/init.lua")
+
 print("[INFO] Colony Manager v" .. version .. " starting...")
 print("[INFO] Check interval: " .. tostring(CHECK_INTERVAL) .. "s")
 
--- Find and open wireless modem
+-- Find and open wireless modem (using lib.peripherals.modem)
 print("[INFO] Searching for available modem...")
-local modemSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        modemSide = side
-        break
-    end
-end
+local modemSide = lib.peripherals.modem.findWirelessModem()
 if not modemSide then
     error("[ERROR] No wireless modem found! Please attach a modem.")
 end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
-rednet.open(modemSide)
-
--- Find colony peripheral
-print("[INFO] Searching for colony peripheral...")
-local colony = nil
-for _, name in ipairs(peripheral.getNames()) do
-    if peripheral.getType(name) == "colony" or peripheral.getType(name):find("colony") then
-        colony = peripheral.wrap(name)
-        break
-    end
+local success, err = lib.peripherals.modem.openRednet(modemSide)
+if not success then
+    error("[ERROR] Failed to open rednet: " .. tostring(err))
 end
+
+-- Find colony peripheral (using lib.peripherals.colony)
+print("[INFO] Searching for colony peripheral...")
+local colony, colonyName = lib.peripherals.colony.findColonyPeripheral()
 if not colony then
     error("[ERROR] No colony peripheral found! Please attach a colony integrator.")
 end
-print("[INFO] Colony peripheral found.")
+print("[INFO] Colony peripheral found: " .. tostring(colonyName))
 
--- Track already requested items to avoid duplicate requests
-local requestedItems = {}
+-- Track already requested items to avoid duplicate requests (using lib.data.tracking)
+-- Tracker auto-cleans entries older than 60 seconds
+local requestTracker = lib.data.tracking.createTracker(60000, true)
 
--- Function to request items from drawer network
+-- Function to request items from drawer network (using lib.network.rednet, lib.network.protocol)
 local function requestItems(itemId, quantity)
-    local request = PASSWORD .. " " .. itemId .. " " .. tostring(quantity)
-    print("[REQ] " .. itemId .. " x" .. tostring(quantity))
-    rednet.broadcast(request)
+    -- Create a standardized request message
+    local requestMsg = lib.network.protocol.createMessage(
+        lib.network.protocol.MESSAGE_TYPES.REQUEST,
+        {
+            password = PASSWORD,
+            itemId = itemId,
+            quantity = quantity
+        }
+    )
     
-    local timeout = os.startTimer(5)
-    while true do
-        local event, param1, param2 = os.pullEvent()
-        if event == "rednet_message" then
-            print("[RECV] From " .. tostring(param1) .. ": " .. tostring(param2))
-            return true
-        elseif event == "timer" and param1 == timeout then
-            return false
-        end
+    print("[REQ] " .. itemId .. " x" .. tostring(quantity))
+    
+    -- Broadcast using lib (auto-serializes tables)
+    local success, err = lib.network.rednet.broadcast(requestMsg)
+    if not success then
+        print("[ERROR] Broadcast failed: " .. tostring(err))
+        return false
     end
+    
+    -- Receive response with timeout (auto-deserializes)
+    local senderId, message = lib.network.rednet.receive(nil, 5)
+    if senderId then
+        print("[RECV] From " .. tostring(senderId) .. ": " .. tostring(message))
+        return true
+    end
+    return false
 end
 
 -- Function to check and fulfill colony requests
@@ -69,21 +78,18 @@ local function checkColonyRequests()
             if itemName then
                 local requestKey = itemName .. ":" .. tostring(count)
                 
-                if not requestedItems[requestKey] then
+                -- Check if this request is already being tracked (using lib.data.tracking)
+                -- isStale returns true if not found or if entry is older than maxAge
+                if lib.data.tracking.isStale(requestTracker, requestKey) then
                     requestItems(itemName, count)
-                    requestedItems[requestKey] = os.clock()
+                    -- Track this request to avoid duplicates
+                    lib.data.tracking.track(requestTracker, requestKey, true)
                 end
             end
         end
     end
     
-    -- Clear old request tracking (older than 60 seconds)
-    local now = os.clock()
-    for key, time in pairs(requestedItems) do
-        if now - time > 60 then
-            requestedItems[key] = nil
-        end
-    end
+    -- Cleanup is handled automatically by the tracker (autoCleanup=true)
 end
 
 -- Main auto loop

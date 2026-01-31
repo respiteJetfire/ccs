@@ -1,7 +1,12 @@
 -- weatherSystem/station/station.lua
 -- Weather Station v6.3.9 - Improved XL cloud designs
 -- Master handles all forecasting - station registers and displays
+-- Dependencies: lib (peripherals.modem, peripherals.monitor, peripherals.environment,
+--               network.rednet, network.protocol, data.stale)
 local version = "8.2.0"
+
+-- Load shared library
+local lib = dofile("lib/init.lua")
 
 print("[INFO] Weather Station v" .. version .. " starting...")
 
@@ -15,32 +20,27 @@ print("[INFO] Station Name: " .. config.STATION_NAME)
 -- Network protocols
 local STATION_PROTOCOL = "weather_net"
 
--- Find and open wireless modem
+-- Find and open wireless modem using lib
 print("[INFO] Searching for wireless modem...")
-local modemSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        modemSide = side
-        break
-    end
-end
+local modemSide, modemPeripheral = lib.peripherals.modem.findWirelessModem()
 if not modemSide then
     error("[ERROR] No wireless modem found!")
 end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
-rednet.open(modemSide)
+local openSuccess, openErr = lib.peripherals.modem.openRednet(modemSide)
+if not openSuccess then
+    error("[ERROR] Failed to open rednet: " .. tostring(openErr))
+end
 
--- Find monitors (optional)
+-- Find monitors (optional) using lib
 print("[INFO] Searching for monitors...")
+local monitorResults = lib.peripherals.monitor.findAllMonitors()
 local monitors = {}
-for _, name in ipairs(peripheral.getNames()) do
-    if peripheral.getType(name) == "monitor" then
-        local mon = peripheral.wrap(name)
-        if mon and mon.setTextScale then
-            mon.setTextScale((config.DISPLAY and config.DISPLAY.TEXT_SCALE) or 0.5)
-        end
-        table.insert(monitors, {name = name, peripheral = mon})
+for _, mon in ipairs(monitorResults) do
+    if mon.peripheral and mon.peripheral.setTextScale then
+        mon.peripheral.setTextScale((config.DISPLAY and config.DISPLAY.TEXT_SCALE) or 0.5)
     end
+    table.insert(monitors, {name = mon.name, peripheral = mon.peripheral})
 end
 
 local monitor = nil
@@ -72,18 +72,11 @@ else
     print("[INFO] No monitor - headless mode")
 end
 
--- Find environment detector
+-- Find environment detector using lib
 print("[INFO] Searching for environment detector...")
-local envDetector = nil
-for _, name in ipairs(peripheral.getNames()) do
-    local pType = peripheral.getType(name)
-    if pType == "environmentDetector" or (pType and pType:find("environment")) then
-        envDetector = peripheral.wrap(name)
-        break
-    end
-end
+local envDetector, envDetectorSide = lib.peripherals.environment.findEnvironmentDetector()
 if envDetector then
-    print("[INFO] Environment detector found")
+    print("[INFO] Environment detector found on " .. tostring(envDetectorSide))
 else
     print("[WARN] No environment detector")
 end
@@ -140,14 +133,13 @@ local function detectBiomeData()
     end)
 end
 
--- Register with master
+-- Register with master using lib.network
 local function registerStation()
     detectBiomeData()
     
-    local packet = {
-        type = "station_register",
+    -- Create registration message using lib.network.protocol
+    local packet = lib.network.protocol.createMessage("station_register", {
         version = version,
-        timestamp = os.epoch("utc"),
         station = {
             id = config.STATION_ID,
             name = config.STATION_NAME
@@ -156,18 +148,20 @@ local function registerStation()
         dimension = localBiomeData.dimension,
         altitude = localBiomeData.altitude,
         position = localBiomeData.position
-    }
-    rednet.broadcast(packet, STATION_PROTOCOL)
+    })
+    -- Add type field at top level for backward compatibility
+    packet.type = "station_register"
+    
+    lib.network.rednet.broadcast(packet, STATION_PROTOCOL)
     print("[REG] Registered: " .. localBiomeData.biome)
 end
 
--- Send heartbeat
+-- Send heartbeat using lib.network
 local function sendHeartbeat()
     detectBiomeData()
     
-    local packet = {
-        type = "station_heartbeat",
-        timestamp = os.epoch("utc"),
+    -- Create heartbeat message using lib.network.protocol
+    local packet = lib.network.protocol.createMessage("station_heartbeat", {
         station = {
             id = config.STATION_ID,
             name = config.STATION_NAME
@@ -177,18 +171,22 @@ local function sendHeartbeat()
         altitude = localBiomeData.altitude,
         position = localBiomeData.position,
         mobData = localMobData
-    }
-    rednet.broadcast(packet, STATION_PROTOCOL)
+    })
+    -- Add type field at top level for backward compatibility
+    packet.type = "station_heartbeat"
+    
+    lib.network.rednet.broadcast(packet, STATION_PROTOCOL)
 end
 
--- Request forecast
+-- Request forecast using lib.network
 local function requestForecast()
-    local packet = {
-        type = "forecast_request",
-        station = { id = config.STATION_ID },
-        timestamp = os.epoch("utc")
-    }
-    rednet.broadcast(packet, STATION_PROTOCOL)
+    local packet = lib.network.protocol.createMessage("forecast_request", {
+        station = { id = config.STATION_ID }
+    })
+    -- Add type field at top level for backward compatibility
+    packet.type = "forecast_request"
+    
+    lib.network.rednet.broadcast(packet, STATION_PROTOCOL)
 end
 
 -- Process received forecast
@@ -381,12 +379,13 @@ local function heartbeatLoop()
     end
 end
 
--- Receive loop
+-- Receive loop using lib.network
 local function receiveLoop()
     while true do
-        local senderId, message = rednet.receive(nil, 30)
+        local senderId, message, protocol, err = lib.network.rednet.receive(nil, 30)
         if senderId and message then
             local packet = message
+            -- lib.network.rednet.receive auto-deserializes tables
             if type(message) == "string" then
                 packet = textutils.unserialiseJSON(message) or message
             end
@@ -398,7 +397,10 @@ local function receiveLoop()
             end
         end
         
-        if not currentForecast then
+        -- Check if forecast is stale or missing using lib.data.stale
+        local forecastStale = not currentForecast or 
+            (currentForecast.generatedAt and lib.data.stale.isStale(currentForecast.generatedAt, 120000))
+        if forecastStale then
             requestForecast()
         end
     end
@@ -724,7 +726,8 @@ else
     parallel.waitForAny(heartbeatLoop, receiveLoop, inputLoop, colonyLoop, mobScanLoop)
 end
 
-rednet.close(modemSide)
+-- Close rednet using lib
+lib.peripherals.modem.closeRednet(modemSide)
 if monitor and renderers then
     for i, r in ipairs(renderers) do
         r.clear()

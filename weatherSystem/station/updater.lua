@@ -61,6 +61,12 @@ local function updateScripts()
             {remote = "weatherSystem/station/client.lua", local_ = "weatherSystem/station/client.lua"},
             {remote = "weatherSystem/station/ui_assets.lua", local_ = "weatherSystem/station/ui_assets.lua"},
             {remote = "weatherSystem/station/ui_renderer.lua", local_ = "weatherSystem/station/ui_renderer.lua"},
+            -- Library dependencies
+            {remote = "lib/init.lua", local_ = "lib/init.lua"},
+            {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+            {remote = "lib/peripherals/monitor.lua", local_ = "lib/peripherals/monitor.lua"},
+            {remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua"},
+            {remote = "lib/display/layout.lua", local_ = "lib/display/layout.lua"},
         }
         print("[INFO] Installing weather client (display-only, no registration)")
     else
@@ -73,6 +79,17 @@ local function updateScripts()
             {remote = "weatherSystem/station/ui_assets.lua", local_ = "weatherSystem/station/ui_assets.lua"},
             {remote = "weatherSystem/station/ui_renderer.lua", local_ = "weatherSystem/station/ui_renderer.lua"},
             {remote = "weatherSystem/station/colony_integration.lua", local_ = "weatherSystem/station/colony_integration.lua"},
+            -- Library dependencies
+            {remote = "lib/init.lua", local_ = "lib/init.lua"},
+            {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+            {remote = "lib/peripherals/monitor.lua", local_ = "lib/peripherals/monitor.lua"},
+            {remote = "lib/peripherals/environment.lua", local_ = "lib/peripherals/environment.lua"},
+            {remote = "lib/peripherals/colony.lua", local_ = "lib/peripherals/colony.lua"},
+            {remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua"},
+            {remote = "lib/network/protocol.lua", local_ = "lib/network/protocol.lua"},
+            {remote = "lib/config/manager.lua", local_ = "lib/config/manager.lua"},
+            {remote = "lib/data/stale.lua", local_ = "lib/data/stale.lua"},
+            {remote = "lib/display/layout.lua", local_ = "lib/display/layout.lua"},
         }
         print("[INFO] Installing standard weather station (with display and registration)")
     end

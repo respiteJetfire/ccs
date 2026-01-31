@@ -44,10 +44,21 @@ end
 -- main method to call functions
 local function updateScripts()
     local filesToUpdate = {
+        -- Script files
         {remote = "emcTurtle/startup.lua", local_ = "startup.lua"},
         {remote = "emcTurtle/updater.lua", local_ = "updater.lua"},
         {remote = "emcTurtle/manager.lua", local_ = "emcTurtle/manager.lua"},
-        -- add more files as needed
+        -- Library dependencies
+        {remote = "lib/init.lua", local_ = "lib/init.lua"},
+        {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+        {remote = "lib/format/numbers.lua", local_ = "lib/format/numbers.lua"},
+        {remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua"},
+        {remote = "lib/network/protocol.lua", local_ = "lib/network/protocol.lua"},
+        {remote = "lib/config/manager.lua", local_ = "lib/config/manager.lua"},
+        {remote = "lib/config/wizard.lua", local_ = "lib/config/wizard.lua"},
+        {remote = "lib/data/stale.lua", local_ = "lib/data/stale.lua"},
+        {remote = "lib/turtle/inventory.lua", local_ = "lib/turtle/inventory.lua"},
+        {remote = "lib/turtle/inspection.lua", local_ = "lib/turtle/inspection.lua"},
     }
 
     local updated = 0

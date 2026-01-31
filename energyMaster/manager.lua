@@ -1,97 +1,58 @@
 -- CC script to automatically monitor energy storage and broadcast via rednet
 -- Monitors Mekanism energy cubes and other energy storage peripherals
-local version = "0.2.1"
+-- Refactored to use shared library (lib/init.lua)
+-- Dependencies: lib.peripherals.modem, lib.peripherals.energy, lib.format.numbers, lib.network.rednet
+local version = "0.3.0"
 local CHECK_INTERVAL = 5  -- seconds between broadcasts
+
+-- Load shared library
+local lib = dofile("lib/init.lua")
 
 print("[INFO] Energy Master v" .. version .. " starting...")
 print("[INFO] Check interval: " .. tostring(CHECK_INTERVAL) .. "s")
 
--- Find and open wireless modem for broadcasting
+-- Find and open wireless modem for broadcasting using lib
 print("[INFO] Searching for wireless modem for broadcasting...")
-local wirelessModemSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        wirelessModemSide = side
-        break
-    end
-end
+local wirelessModemSide, wirelessModem = lib.peripherals.modem.findWirelessModem()
 if not wirelessModemSide then
     error("[ERROR] No wireless modem found! Please attach an ender modem for broadcasting.")
 end
 print("[INFO] Opening rednet on " .. wirelessModemSide .. " for broadcasting...")
-rednet.open(wirelessModemSide)
-
--- Find all wired modems for peripheral network
-print("[INFO] Searching for wired modems...")
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and not peripheral.call(side, "isWireless") then
-        print("[INFO] Found wired modem on " .. side)
-    end
+local success, err = lib.peripherals.modem.openRednet(wirelessModemSide)
+if not success then
+    error("[ERROR] Failed to open rednet: " .. tostring(err))
 end
 
--- Find all energy storage peripherals (connected via wired modem network)
+-- Find all wired modems for peripheral network using lib
+print("[INFO] Searching for wired modems...")
+local wiredModemSide, wiredModem = lib.peripherals.modem.findWiredModem()
+if wiredModemSide then
+    print("[INFO] Found wired modem on " .. wiredModemSide)
+end
+
+-- Find all energy storage peripherals using lib
 print("[INFO] Searching for energy storage peripherals...")
-local energyDevices = {}
-for _, name in ipairs(peripheral.getNames()) do
-    local pType = peripheral.getType(name)
-    print("[DEBUG] Found peripheral: " .. name .. " (Type: " .. pType .. ")")
-    
-    -- Check for Mekanism energy cubes and other energy storage devices
-    -- Try case-insensitive matching
-    local pTypeLower = pType:lower()
-    if pTypeLower:find("energycube") or pTypeLower:find("energy_cube") or pTypeLower:find("induction_matrix") or pTypeLower:find("eliteenergycube") then
-        local device = peripheral.wrap(name)
-        -- Check if it has energy methods
-        if device.getEnergy and device.getMaxEnergy then
-            table.insert(energyDevices, {name = name, type = pType, peripheral = device})
-            print("[INFO] Added energy device: " .. name .. " (" .. pType .. ")")
-        else
-            print("[WARN] Device " .. name .. " matched but lacks getEnergy/getMaxEnergy methods")
-        end
-    end
+local energyDevices = lib.peripherals.energy.findEnergyDevices()
+
+-- Log found devices
+for _, device in ipairs(energyDevices) do
+    print("[INFO] Added energy device: " .. device.name .. " (" .. device.type .. ")")
 end
 
 if #energyDevices == 0 then
     print("[ERROR] No energy storage peripherals found! Please attach energy cubes.")
-    print("[ERROR] Check the debug output above for available peripherals.")
     error("No energy devices detected")
 end
 print("[INFO] Total energy devices found: " .. tostring(#energyDevices))
 
--- Function to get total energy across all devices
+-- Function to get total energy across all devices using lib
 local function getTotalEnergy()
-    local totalEnergy = 0
-    local totalMaxEnergy = 0
-    
-    for _, device in ipairs(energyDevices) do
-        local success, energy = pcall(device.peripheral.getEnergy)
-        local successMax, maxEnergy = pcall(device.peripheral.getMaxEnergy)
-        
-        if success and successMax then
-            totalEnergy = totalEnergy + energy
-            totalMaxEnergy = totalMaxEnergy + maxEnergy
-        else
-            print("[WARN] Failed to read from " .. device.name)
-        end
-    end
-    
+    local totalEnergy = lib.peripherals.energy.getTotalEnergy(energyDevices)
+    local totalMaxEnergy = lib.peripherals.energy.getTotalMaxEnergy(energyDevices)
     return totalEnergy, totalMaxEnergy
 end
 
--- Function to format energy numbers
-local function formatEnergy(value)
-    if value >= 1000000000 then
-        return string.format("%.2fGFE", value / 1000000000)
-    elseif value >= 1000000 then
-        return string.format("%.2fMFE", value / 1000000)
-    elseif value >= 1000 then
-        return string.format("%.2fKFE", value / 1000)
-    else
-        return string.format("%.0fFE", value)
-    end
-end
-
--- Function to broadcast energy data
+-- Function to broadcast energy data using lib
 local function broadcastEnergyData()
     local totalEnergy, totalMaxEnergy = getTotalEnergy()
     local percentFull = (totalMaxEnergy > 0) and (totalEnergy / totalMaxEnergy * 100) or 0
@@ -105,11 +66,16 @@ local function broadcastEnergyData()
         timestamp = os.epoch("utc")
     }
     
-    rednet.broadcast(textutils.serialize(message), "energy_master")
+    -- Use lib for broadcasting (auto-serializes tables)
+    local success, err = lib.network.rednet.broadcast(message, "energy_master")
+    if not success then
+        print("[WARN] Broadcast failed: " .. tostring(err))
+    end
     
+    -- Use lib for energy formatting
     print(string.format("[BROADCAST] Energy: %s / %s (%.1f%%)", 
-        formatEnergy(totalEnergy), 
-        formatEnergy(totalMaxEnergy), 
+        lib.format.numbers.formatEnergy(totalEnergy), 
+        lib.format.numbers.formatEnergy(totalMaxEnergy), 
         percentFull))
 end
 

@@ -1,72 +1,73 @@
 -- CC Turtle script to monitor EMC and control pink collector placement
-local version = "0.1.1"
+-- Dependencies: lib (config, peripherals, format, network, turtle modules)
+local version = "0.2.0"
 local CHECK_INTERVAL = 2  -- seconds between checks
+
+-- Load shared library
+local lib = dofile("lib/init.lua")
 
 print("[INFO] EMC Turtle v" .. version .. " starting...")
 
--- Load or create configuration
-local config = {}
+-- Load or create configuration using lib.config.manager
 local configPath = "emcTurtle/config.json"
+local config = lib.config.manager.load(configPath, {})
 
-if fs.exists(configPath) then
-    local file = fs.open(configPath, "r")
-    local content = file.readAll()
-    file.close()
-    config = textutils.unserializeJSON(content)
-    print("[INFO] Configuration loaded:")
-    print("  Player: " .. config.playerName)
-    print("  EMC Cap: " .. config.emcCap)
-else
+if not config.playerName or not config.emcCap then
+    -- Run first-time setup wizard using lib.config.wizard
+    lib.config.wizard.header("EMC Turtle Setup")
     print("[SETUP] No configuration found. Running first-time setup...")
     print("")
-    write("Enter player name to monitor: ")
-    local playerName = read()
     
-    if not playerName or playerName == "" then
-        error("[ERROR] Player name cannot be empty!")
+    -- Use wizard.ask for player name with validation
+    local playerName = lib.config.wizard.ask("Enter player name to monitor", nil, function(value)
+        if not value or value == "" then
+            return false, "Player name cannot be empty"
+        end
+        return true
+    end)
+    
+    if not playerName then
+        error("[ERROR] Setup cancelled!")
     end
     
-    write("Enter EMC cap (collector removed when above this): ")
-    local emcCap = tonumber(read())
+    -- Use wizard.askNumber for EMC cap
+    local emcCap = lib.config.wizard.askNumber("Enter EMC cap (collector removed when above this)", nil, 1)
     
-    if not emcCap or emcCap <= 0 then
-        error("[ERROR] EMC cap must be a positive number!")
+    if not emcCap then
+        error("[ERROR] Setup cancelled!")
     end
     
     config.playerName = playerName
     config.emcCap = emcCap
     
-    -- Create directory if needed
-    if not fs.exists("emcTurtle") then
-        fs.makeDir("emcTurtle")
+    -- Save configuration using lib.config.manager
+    local success, err = lib.config.manager.save(configPath, config)
+    if not success then
+        error("[ERROR] Failed to save configuration: " .. tostring(err))
     end
-    
-    -- Save configuration
-    local file = fs.open(configPath, "w")
-    file.write(textutils.serializeJSON(config))
-    file.close()
     
     print("[INFO] Configuration saved")
     print("  Player: " .. config.playerName)
     print("  EMC Cap: " .. config.emcCap)
     print("")
     sleep(2)
+else
+    print("[INFO] Configuration loaded:")
+    print("  Player: " .. config.playerName)
+    print("  EMC Cap: " .. config.emcCap)
 end
 
--- Find and open wireless modem
+-- Find and open wireless modem using lib.peripherals.modem
 print("[INFO] Searching for wireless modem...")
-local modemSide = nil
-for _, side in ipairs(peripheral.getNames()) do
-    if peripheral.getType(side) == "modem" and peripheral.call(side, "isWireless") then
-        modemSide = side
-        break
-    end
-end
+local modemSide = lib.peripherals.modem.findWirelessModem()
 if not modemSide then
     error("[ERROR] No wireless modem found! Please attach an ender modem.")
 end
 print("[INFO] Opening rednet on " .. modemSide .. "...")
-rednet.open(modemSide)
+local success, err = lib.peripherals.modem.openRednet(modemSide)
+if not success then
+    error("[ERROR] Failed to open rednet: " .. tostring(err))
+end
 
 -- State tracking
 local currentEMC = 0
@@ -74,37 +75,21 @@ local lastUpdate = 0
 local collectorPlaced = true  -- Assume collector is placed at startup
 local lastAction = "none"
 
--- Function to format EMC numbers
-local function formatEMC(value)
-    if value >= 1000000000 then
-        return string.format("%.2fB", value / 1000000000)
-    elseif value >= 1000000 then
-        return string.format("%.2fM", value / 1000000)
-    elseif value >= 1000 then
-        return string.format("%.2fK", value / 1000)
-    else
-        return string.format("%d", value)
-    end
+-- Use lib.format.numbers.formatEMC for formatting (replaces local formatEMC function)
+local formatEMC = function(value)
+    return lib.format.numbers.formatEMC(value, true, false)  -- compact mode, no unit suffix
 end
 
--- Function to check if block below is collector
+-- Function to check if block below is collector (uses lib.turtle.inspection)
+local COLLECTOR_NAME = "projectexpansion:pink_collector"
+
 local function isCollectorBelow()
-    local success, data = turtle.inspectDown()
-    if success and data.name then
-        return data.name == "projectexpansion:pink_collector"
-    end
-    return false
+    return lib.turtle.inspection.isBlock("down", COLLECTOR_NAME)
 end
 
--- Function to find collector in inventory
+-- Function to find collector in inventory (uses lib.turtle.inventory)
 local function findCollectorSlot()
-    for slot = 1, 16 do
-        local item = turtle.getItemDetail(slot)
-        if item and item.name == "projectexpansion:pink_collector" then
-            return slot
-        end
-    end
-    return nil
+    return lib.turtle.inventory.findItem(COLLECTOR_NAME)
 end
 
 -- Function to remove collector
@@ -211,14 +196,16 @@ local function updateCollectorState()
     end
 end
 
--- Function to listen for EMC broadcasts
+-- Function to listen for EMC broadcasts (uses lib.network.rednet and lib.network.protocol)
 local function listenForUpdates()
     while true do
-        local senderId, message, protocol = rednet.receive("emc_master", CHECK_INTERVAL)
+        -- Use lib.network.rednet.receive for receiving messages
+        local senderId, message, protocol = lib.network.rednet.receive("emc_master", CHECK_INTERVAL)
         
-        if message then
-            local success, data = pcall(textutils.unserialize, message)
-            if success and data and data.type == "emc_status" then
+        if senderId and message then
+            -- Use lib.network.protocol.parseMessage for parsing
+            local data, parseErr = lib.network.protocol.parseMessage(message)
+            if data and data.type == "emc_status" then
                 -- Check if this is our player
                 if data.playerName == config.playerName then
                     currentEMC = data.emcValue
@@ -237,8 +224,8 @@ local function listenForUpdates()
             end
         end
         
-        -- Check if data is stale
-        if os.epoch("utc") - lastUpdate > 30000 and lastUpdate > 0 then
+        -- Check if data is stale using lib.data.stale
+        if lib.data.stale.isStale(lastUpdate, 30000) and lastUpdate > 0 then
             print("[WARN] No recent data from master (>30s)")
         end
     end
@@ -249,7 +236,7 @@ print("[INFO] Checking initial collector state...")
 collectorPlaced = isCollectorBelow()
 print("[INFO] Collector " .. (collectorPlaced and "detected below" or "not detected below"))
 print("")
-print("[INFO] Monitoring " .. config.playerName .. " with cap at " .. formatEMC(config.emcCap))
+print("[INFO] Monitoring " .. config.playerName .. " with cap at " .. lib.format.numbers.formatEMC(config.emcCap, true, true))
 print("[INFO] Listening for EMC broadcasts...")
 print("")
 

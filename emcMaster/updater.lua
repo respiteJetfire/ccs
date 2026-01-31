@@ -44,10 +44,19 @@ end
 -- main method to call functions
 local function updateScripts()
     local filesToUpdate = {
+        -- Script files
         {remote = "emcMaster/startup.lua", local_ = "startup.lua"},
         {remote = "emcMaster/updater.lua", local_ = "updater.lua"},
         {remote = "emcMaster/manager.lua", local_ = "emcMaster/manager.lua"},
-        -- add more files as needed
+        -- Library dependencies
+        {remote = "lib/init.lua", local_ = "lib/init.lua"},
+        {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+        {remote = "lib/peripherals/emc.lua", local_ = "lib/peripherals/emc.lua"},
+        {remote = "lib/format/numbers.lua", local_ = "lib/format/numbers.lua"},
+        {remote = "lib/network/rednet.lua", local_ = "lib/network/rednet.lua"},
+        {remote = "lib/network/protocol.lua", local_ = "lib/network/protocol.lua"},
+        {remote = "lib/config/manager.lua", local_ = "lib/config/manager.lua"},
+        {remote = "lib/config/wizard.lua", local_ = "lib/config/wizard.lua"},
     }
 
     local updated = 0

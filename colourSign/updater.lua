@@ -42,13 +42,22 @@ end
 
 local function updateScripts()
     local filesToUpdate = {
+        -- Script files
         {remote = "colourSign/manager.lua", local_ = "colourSign/manager.lua"},
         {remote = "colourSign/sign_renderer.lua", local_ = "colourSign/sign_renderer.lua"},
         {remote = "colourSign/config.json", local_ = "colourSign/config.json"},
         {remote = "colourSign/README.md", local_ = "colourSign/README.md"},
         -- Copy startup/updater to root so users can run them easily
         {remote = "colourSign/startup.lua", local_ = "startup.lua"},
-        {remote = "colourSign/updater.lua", local_ = "updater.lua"}
+        {remote = "colourSign/updater.lua", local_ = "updater.lua"},
+        -- Library dependencies
+        {remote = "lib/init.lua", local_ = "lib/init.lua"},
+        {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
+        {remote = "lib/peripherals/monitor.lua", local_ = "lib/peripherals/monitor.lua"},
+        {remote = "lib/config/manager.lua", local_ = "lib/config/manager.lua"},
+        {remote = "lib/config/wizard.lua", local_ = "lib/config/wizard.lua"},
+        {remote = "lib/display/colors.lua", local_ = "lib/display/colors.lua"},
+        {remote = "lib/display/layout.lua", local_ = "lib/display/layout.lua"},
     }
 
     local updated, skipped, failed = 0, 0, 0

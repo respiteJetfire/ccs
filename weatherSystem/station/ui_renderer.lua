@@ -1,6 +1,10 @@
 -- weatherSystem/station/ui_renderer.lua
 -- UI Renderer v7.2.0 - Unified radar, mob counts in overview
+-- Dependencies: lib (display.layout, display.colors)
 local version = "7.3.0"
+
+-- Load shared library for display utilities
+local lib = dofile("lib/init.lua")
 
 local renderer = {}
 
@@ -459,9 +463,9 @@ function renderer.drawText(x, y, text, fgColor, bgColor)
     monitor.write(text)
 end
 
--- Draw centered text
+-- Draw centered text using lib.display.layout
 function renderer.drawCenteredText(y, text, fgColor, bgColor)
-    local x = math.floor((monitorWidth - #text) / 2) + 1
+    local x = lib.display.layout.centerX(monitorWidth, #text)
     renderer.drawText(x, y, text, fgColor, bgColor)
 end
 
@@ -484,7 +488,7 @@ function renderer.drawBox(x, y, width, height, bgColor)
     end
 end
 
--- Draw header
+-- Draw header using lib.display.layout
 function renderer.drawHeader(title, time, pageIndicator)
     local adaptiveColors = getAdaptiveColors()
     renderer.drawBox(1, 1, monitorWidth, 2, adaptiveColors.headerBg)
@@ -493,20 +497,26 @@ function renderer.drawHeader(title, time, pageIndicator)
         renderer.drawText(2, 1, pageIndicator, adaptiveColors.textSecondary, adaptiveColors.headerBg)
     end
     
-    renderer.drawCenteredText(1, title, adaptiveColors.textPrimary, adaptiveColors.headerBg)
+    -- Use lib.display.layout for centering
+    local titleX = lib.display.layout.centerX(monitorWidth, #title)
+    renderer.drawText(titleX, 1, title, adaptiveColors.textPrimary, adaptiveColors.headerBg)
     
     if time then
         local timeStr = textutils.formatTime(time, false)
-        renderer.drawText(monitorWidth - #timeStr, 1, timeStr, adaptiveColors.textHighlight, adaptiveColors.headerBg)
+        -- Use lib.display.layout for right alignment
+        local timeX = lib.display.layout.rightAlign(monitorWidth, #timeStr, 0)
+        renderer.drawText(timeX, 1, timeStr, adaptiveColors.textHighlight, adaptiveColors.headerBg)
     end
 end
 
--- Draw footer
+-- Draw footer using lib.display.layout
 function renderer.drawFooter(text)
     local adaptiveColors = getAdaptiveColors()
     local y = monitorHeight
     renderer.drawBox(1, y, monitorWidth, 1, adaptiveColors.footerBg)
-    renderer.drawCenteredText(y, text, adaptiveColors.textSecondary, adaptiveColors.footerBg)
+    -- Use lib.display.layout for centering
+    local textX = lib.display.layout.centerX(monitorWidth, #text)
+    renderer.drawText(textX, y, text, adaptiveColors.textSecondary, adaptiveColors.footerBg)
 end
 
 -- Draw large weather icon (animated, size based on display)
