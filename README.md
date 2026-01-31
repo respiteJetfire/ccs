@@ -60,21 +60,55 @@ All scripts share a common library (`lib/`) that provides standardized functions
 
 ## Installation
 
-### Method 1: Direct Download
-1. Download the repository as a ZIP
-2. Extract to your ComputerCraft computer's root directory
-3. Ensure the `lib/` folder is at the root level
-
-### Method 2: Git Clone (if HTTP enabled)
+### Method 1: Quick Install (Recommended)
+Download and run the bootstrap updater for your desired script:
 ```lua
-shell.run("wget", "https://github.com/respiteJetfire/ccs/archive/main.zip", "ccs.zip")
+-- Example: Install Energy Master
+wget run https://raw.githubusercontent.com/respiteJetfire/ccs/main/energyMaster/updater.lua
+
+-- Or: Install EMC Client
+wget run https://raw.githubusercontent.com/respiteJetfire/ccs/main/emcClient/updater.lua
 ```
 
-### Method 3: Individual Script Download
-Each script includes an `updater.lua` that automatically downloads required files:
+This will:
+1. Download the central updater system
+2. Download all required script files
+3. Automatically download all library dependencies
+4. Configure the startup script
+
+### Method 2: Manual Central Updater
+Download the central updater and choose your script:
 ```lua
-shell.run("wget", "https://raw.githubusercontent.com/respiteJetfire/ccs/main/energyMaster/updater.lua", "updater.lua")
-shell.run("updater.lua")
+wget https://raw.githubusercontent.com/respiteJetfire/ccs/main/updater.lua
+updater --list                    -- See available scripts
+updater energyMaster              -- Install Energy Master
+updater weatherSystem/station     -- Install Weather Station
+updater weatherSystem/station --variant=client  -- Install display-only client
+```
+
+### Method 3: Direct Download
+1. Download the repository as a ZIP
+2. Extract to your ComputerCraft computer's root directory
+3. Run `updater <script-name>` to configure
+
+### Updating Scripts
+Scripts automatically check for updates on startup. You can also manually update:
+```lua
+updater                           -- Update current script
+updater --self-update             -- Update only the updater
+updater <script-name>             -- Switch to different script
+```
+
+### Disabling Auto-Updates
+Create a `.no_auto_update` file to disable automatic update checks:
+```lua
+local f = fs.open(".no_auto_update", "w")
+f.close()
+```
+
+Or run startup with the flag:
+```lua
+startup --no-update
 ```
 
 ---
@@ -83,34 +117,39 @@ shell.run("updater.lua")
 
 ```
 CCScripts/
-├── lib/                        # Shared library (required by all scripts)
-│   ├── init.lua               # Library loader with lazy loading
-│   ├── README.md              # Comprehensive library documentation
-│   ├── peripherals/           # Peripheral discovery and management
-│   ├── network/               # Network communication utilities
-│   ├── display/               # Monitor rendering functions
-│   ├── format/                # Number and time formatting
-│   ├── config/                # Configuration management
-│   ├── data/                  # Data tracking and caching
-│   ├── turtle/                # Turtle-specific utilities
-│   ├── update/                # Auto-update system
-│   └── utils/                 # General utilities
+├── updater.lua                    # Central updater (handles all scripts)
+├── startup.lua                    # Universal startup script
+├── .script_config                 # Auto-generated config (stores current script)
+├── lib/                           # Shared library (required by all scripts)
+│   ├── init.lua                   # Library loader with lazy loading
+│   ├── README.md                  # Comprehensive library documentation
+│   ├── peripherals/               # Peripheral discovery and management
+│   ├── network/                   # Network communication utilities
+│   ├── display/                   # Monitor rendering functions
+│   ├── format/                    # Number and time formatting
+│   ├── config/                    # Configuration management
+│   ├── data/                      # Data tracking and caching
+│   ├── turtle/                    # Turtle-specific utilities
+│   ├── update/                    # Auto-update system
+│   └── utils/                     # General utilities
 │
-├── energyMaster/              # Energy monitoring master
-├── energyMasterClient/        # Energy display client
-├── emcMaster/                 # EMC broadcasting master
-├── emcClient/                 # EMC display client
-├── emcTurtle/                 # EMC automation turtle
-├── weatherSystem/             # Weather monitoring system
-│   ├── master/               # Weather data aggregation server
-│   └── station/              # Weather data collection station
-├── mffsDefense/              # MFFS defense automation
-├── colonyManager/            # MineColonies request manager
-├── colourSign/               # Configurable sign display
-├── invRequest/               # Inventory request system
-│   ├── server/              # Request server
-│   └── client/              # Request client
-└── example/                  # Example script templates
+├── energyMaster/                  # Energy monitoring master
+│   ├── manager.lua                # Main script
+│   └── updater.lua                # Bootstrap updater
+├── energyMasterClient/            # Energy display client
+├── emcMaster/                     # EMC broadcasting master
+├── emcClient/                     # EMC display client
+├── emcTurtle/                     # EMC automation turtle
+├── weatherSystem/                 # Weather monitoring system
+│   ├── master/                    # Weather data aggregation server
+│   └── station/                   # Weather data collection station
+├── mffsDefense/                   # MFFS defense automation
+├── colonyManager/                 # MineColonies request manager
+├── colourSign/                    # Configurable sign display
+├── invRequest/                    # Inventory request system
+│   ├── server/                    # Request server
+│   └── client/                    # Request client
+└── example/                       # Example script templates
 ```
 
 ---
@@ -521,22 +560,31 @@ local isStale = lib.data.stale.isStale(timestamp, 30000)  -- 30 second timeout
 
 ### Setting Up Your First Script
 
-1. **Choose a script** based on your needs
-2. **Copy the folder** to your ComputerCraft computer
-3. **Ensure `lib/` is present** at the root level
-4. **Run the startup script:**
+1. **Download the bootstrap updater** for your desired script:
    ```lua
-   shell.run("scriptName/startup.lua")
+   wget run https://raw.githubusercontent.com/respiteJetfire/ccs/main/energyMaster/updater.lua
    ```
-5. **Follow any setup wizards** if prompted
+2. **The script will automatically**:
+   - Download the central updater
+   - Install all required files and libraries
+   - Configure startup for auto-run
+3. **Reboot the computer** or run `startup` to begin
 
-### Creating a Startup Script
+### Switching Scripts
 
-To auto-start a script when the computer boots:
-
+To change to a different script:
 ```lua
--- /startup.lua
-shell.run("updater.lua")  -- Optional: check for updates
+updater emcClient                -- Switch to EMC Client
+updater weatherSystem/station    -- Switch to Weather Station
+```
+
+### Creating a Custom Startup
+
+The default startup checks for updates and runs the configured script.
+To customize, edit your startup or create `.no_auto_update`:
+```lua
+-- Custom startup example
+shell.run("updater --self-update")  -- Only update the updater
 shell.run("energyMaster/manager.lua")
 ```
 

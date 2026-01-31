@@ -17,16 +17,18 @@ This folder serves as a reference implementation showing:
 | File | Purpose |
 |------|---------|
 | `manager.lua` | Main script with comprehensive comments explaining each pattern |
-| `startup.lua` | Standard startup script |
-| `updater.lua` | Auto-update script template |
+| `updater.lua` | Bootstrap updater (downloads central updater and runs it) |
 
 ## Usage
 
 This is a reference implementation, not a functional script. Copy and modify for your own scripts.
 
 ```lua
--- To run (for testing structure):
-shell.run("example/startup.lua")
+-- To install:
+wget run https://raw.githubusercontent.com/respiteJetfire/ccs/main/example/updater.lua
+
+-- Or if already installed:
+updater example
 ```
 
 ## Customization Points
@@ -39,7 +41,8 @@ When creating a new script from this template:
 4. **Update `PROTOCOL`** for your network communication
 5. **Add your peripheral discovery** logic
 6. **Implement your main loop logic**
-7. **Update `updater.lua`** file list
+7. **Create bootstrap `updater.lua`** in your folder
+8. **Add manifest entry** in root `updater.lua`
 
 ## Library Modules Referenced
 

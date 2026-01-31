@@ -52,11 +52,19 @@ Every script folder follows this consistent structure:
 ```
 scriptName/
 ├── manager.lua      # Main script logic (or client.lua, server.lua, etc.)
-├── startup.lua      # Boot sequence: runs updater then main script
-├── updater.lua      # Auto-update from GitHub repository
+├── updater.lua      # Bootstrap updater (downloads central updater)
 ├── config.lua       # Default configuration (optional, legacy)
 ├── config.json      # Runtime configuration (auto-generated)
 └── README.md        # Script-specific documentation (optional)
+```
+
+**Root directory files (auto-managed by updater):**
+```
+/
+├── updater.lua      # Central updater (handles all scripts)
+├── startup.lua      # Universal startup script
+├── .script_config   # Current script configuration (auto-generated)
+└── lib/             # Shared library directory
 ```
 
 ### Naming Conventions
@@ -137,101 +145,110 @@ end
 
 ### Startup Script Pattern
 
+The startup script is now centralized at the root level. It:
+1. Loads the script configuration from `.script_config`
+2. Runs the updater for the configured script
+3. Launches the main script
+
+**Root startup.lua behavior:**
 ```lua
--- scriptName/startup.lua
-local version = "X.Y.Z"
-print("[INFO] Script Name Startup v" .. version .. " starting...")
-shell.run("updater.lua")
-shell.run("scriptName/manager.lua")
+-- Loads .script_config to determine which script to run
+-- Runs: updater <scriptName>
+-- Then: shell.run(mainScript)
 ```
 
-### Updater Script Pattern
+**The `.script_config` file is auto-generated:**
+```lua
+{
+    scriptName = "energyMaster",
+    variant = nil,  -- or "client" for variants
+    mainScript = "energyMaster/manager.lua",
+    name = "Energy Master",
+    version = "1.0.0",
+    lastUpdate = 1706745600000
+}
+```
+
+### Bootstrap Updater Pattern (per-script)
+
+Each script folder contains a lightweight bootstrap updater that:
+1. Downloads the central updater if not present
+2. Runs the central updater with the script name
 
 ```lua
--- scriptName/updater.lua
-local version = "1.0.0"
-print("[INFO] Updater v" .. version .. " starting...")
+-- scriptName/updater.lua (Bootstrap)
+local SCRIPT_NAME = "scriptName"
+local VERSION = "2.0.0"
 
-local repo = "https://github.com/respiteJetfire/ccs/blob/main/"
+print("[INFO] Script Name Bootstrap v" .. VERSION)
 
--- File download function
+local REPO_BASE = "https://raw.githubusercontent.com/respiteJetfire/ccs/main/"
+
 local function downloadFile(remotePath, localPath)
-    local url = repo .. remotePath .. "?raw=true"
+    local url = REPO_BASE .. remotePath
     local response = http.get(url)
     if response then
-        -- Create directories if needed
-        local dir = localPath:match("(.+)/[^/]+$")
-        if dir and not fs.exists(dir) then
-            fs.makeDir(dir)
-        end
-        local file = fs.open(localPath, "w")
-        file.write(response.readAll())
-        file.close()
+        local content = response.readAll()
         response.close()
-        print("[OK] Updated: " .. localPath)
+        local file = fs.open(localPath, "w")
+        file.write(content)
+        file.close()
         return true
-    else
-        print("[FAIL] Failed to download: " .. remotePath)
-        return false
+    end
+    return false
+end
+
+-- Ensure central updater exists
+if not fs.exists("updater.lua") or fs.getSize("updater.lua") < 1000 then
+    print("[INFO] Downloading central updater...")
+    if not downloadFile("updater.lua", "updater.lua") then
+        print("[ERROR] Failed to download updater")
+        return
     end
 end
 
--- File comparison function
-local function filesMatch(path1, path2)
-    if not fs.exists(path1) or not fs.exists(path2) then
-        return false
-    end
-    local file1 = fs.open(path1, "r")
-    local file2 = fs.open(path2, "r")
-    local content1 = file1.readAll()
-    local content2 = file2.readAll()
-    file1.close()
-    file2.close()
-    return content1 == content2
-end
-
--- Update function
-local function updateScripts()
-    local filesToUpdate = {
-        -- Script files
-        {remote = "scriptName/startup.lua", local_ = "startup.lua"},
-        {remote = "scriptName/updater.lua", local_ = "updater.lua"},
-        {remote = "scriptName/manager.lua", local_ = "scriptName/manager.lua"},
-        -- Library dependencies
-        {remote = "lib/init.lua", local_ = "lib/init.lua"},
-        -- Add specific lib modules used by this script
-    }
-
-    local updated, skipped, failed = 0, 0, 0
-
-    for _, file in ipairs(filesToUpdate) do
-        local tempPath = file.local_ .. ".tmp"
-        if downloadFile(file.remote, tempPath) then
-            if filesMatch(tempPath, file.local_) then
-                print("[SKIP] No changes: " .. file.local_)
-                fs.delete(tempPath)
-                skipped = skipped + 1
-            else
-                if fs.exists(file.local_) then
-                    fs.delete(file.local_)
-                end
-                fs.move(tempPath, file.local_)
-                updated = updated + 1
-            end
-        else
-            if fs.exists(tempPath) then
-                fs.delete(tempPath)
-            end
-            failed = failed + 1
-        end
-    end
-    
-    print(string.format("[INFO] Update complete: %d updated, %d skipped, %d failed",
-        updated, skipped, failed))
-end
-
-updateScripts()
+-- Run central updater with this script
+shell.run("updater", SCRIPT_NAME)
 ```
+
+### Central Updater Pattern
+
+The central `updater.lua` at the root handles all script updates.
+It contains a manifest of all scripts and their dependencies.
+
+**Adding a new script to the central updater:**
+
+1. Add an entry to `SCRIPT_MANIFESTS` in `updater.lua`:
+```lua
+["newScript"] = {
+    name = "New Script",
+    description = "Description of the script",
+    version = "1.0.0",
+    mainScript = "newScript/manager.lua",
+    files = {
+        "newScript/manager.lua",
+        -- additional script files
+    },
+    libDeps = {
+        "init.lua",
+        "peripherals/modem.lua",
+        -- library dependencies
+    },
+    -- Optional: variants for different installation modes
+    variants = {
+        ["client"] = {
+            name = "New Script Client",
+            mainScript = "newScript/client.lua",
+            files = {"newScript/client.lua"},
+            libDeps = {"init.lua", "peripherals/modem.lua"}
+        }
+    }
+}
+```
+
+2. Create the bootstrap updater in `newScript/updater.lua`
+
+3. Update this documentation
 
 ---
 
@@ -908,20 +925,96 @@ docs(README): Add installation instructions
 
 ### File Update Lists in Updaters
 
-Keep updater file lists current:
+The central updater maintains all file lists. When adding new files to a script:
+
+1. Update the manifest in root `updater.lua`:
+```lua
+["scriptName"] = {
+    -- ...
+    files = {
+        "scriptName/manager.lua",
+        "scriptName/newFile.lua",  -- Add new files here
+    },
+    libDeps = {
+        "init.lua",
+        "peripherals/modem.lua",
+        "newLib/module.lua",  -- Add new lib dependencies here
+    }
+}
+```
+
+2. The bootstrap updaters in each script folder don't need to be updated
+   (they just call the central updater)
+
+---
+
+## Dependency Management
+
+### Automatic Library Dependencies
+
+The central updater automatically downloads all library dependencies
+specified in each script's manifest. When creating a script:
+
+1. Identify which `lib/` modules your script uses
+2. Add them to the `libDeps` array in the manifest
+3. The updater handles the rest
+
+**Common library dependencies by category:**
 
 ```lua
-local filesToUpdate = {
-    -- Always include core files
-    {remote = "scriptName/startup.lua", local_ = "startup.lua"},
-    {remote = "scriptName/updater.lua", local_ = "updater.lua"},
-    {remote = "scriptName/manager.lua", local_ = "scriptName/manager.lua"},
+-- All scripts need the loader
+"init.lua"
+
+-- Network scripts
+"peripherals/modem.lua"
+"network/rednet.lua"
+"network/protocol.lua"
+
+-- Display scripts  
+"peripherals/monitor.lua"
+"display/renderer.lua"
+"display/colors.lua"
+"display/monitor.lua"
+
+-- Configuration
+"config/manager.lua"
+"config/wizard.lua"
+
+-- Formatting
+"format/numbers.lua"
+"format/time.lua"
+
+-- Data tracking
+"data/stale.lua"
+"data/tracking.lua"
+```
+
+### Script Variants
+
+Some scripts support installation variants (e.g., full vs client-only).
+Variants are defined in the manifest:
+
+```lua
+["weatherSystem/station"] = {
+    -- Base manifest (full installation)
+    files = {...},
+    libDeps = {...},
     
-    -- Include required lib modules
-    {remote = "lib/init.lua", local_ = "lib/init.lua"},
-    {remote = "lib/peripherals/modem.lua", local_ = "lib/peripherals/modem.lua"},
-    -- Add all lib modules used by this script
+    variants = {
+        ["client"] = {
+            -- Override for client-only installation
+            name = "Weather Station Client",
+            mainScript = "weatherSystem/station/client.lua",
+            files = {"weatherSystem/station/client.lua", ...},
+            libDeps = {...}  -- Smaller dependency set
+        }
+    }
 }
+```
+
+Install variants with:
+```lua
+updater weatherSystem/station --variant=client
 ```
 
 ---
@@ -932,8 +1025,8 @@ local filesToUpdate = {
 
 - [ ] Create folder: `scriptName/`
 - [ ] Create `manager.lua` with standard template
-- [ ] Create `startup.lua` with standard pattern
-- [ ] Create `updater.lua` with file list ensuring lib dependencies are identified and added to the updater list
+- [ ] Create `updater.lua` (bootstrap pattern)
+- [ ] Add manifest entry to root `updater.lua`
 - [ ] Add configuration support if needed
 - [ ] Add first-run wizard if user input required
 - [ ] Use lib functions for all common operations
@@ -949,7 +1042,7 @@ local filesToUpdate = {
 - [ ] Update version number
 - [ ] Update documentation
 - [ ] Test changes thoroughly
-- [ ] Update updater.lua file list if adding files
+- [ ] Update manifest in root `updater.lua` if adding files
 
 ### Creating a New Library Module
 
@@ -959,7 +1052,7 @@ local filesToUpdate = {
 - [ ] Include version metadata
 - [ ] Test module independently
 - [ ] Document in `lib/README.md`
-- [ ] Add to updater file lists in scripts that use it
+- [ ] Add to manifests in root `updater.lua` for scripts that use it
 
 ---
 
