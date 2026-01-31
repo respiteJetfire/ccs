@@ -7,7 +7,7 @@
 local emc = {}
 
 --- Version information
-emc._VERSION = "1.0.0"
+emc._VERSION = "1.0.1"
 emc._DESCRIPTION = "EMC peripheral utilities for ProjectE integration"
 
 --- EMC peripheral type patterns
@@ -40,13 +40,13 @@ local function isEmcPeripheral(name)
         return false
     end
     
-    -- Check against known types
-    if emcTypeSet[pType] then
+    -- Check against known types or if the peripheral type contains 'emc'
+    if pType and (emcTypeSet[pType] or string.find(string.lower(tostring(pType)), "emc")) then
         return true
     end
-    
-    -- Check for emc in the name
-    if string.find(string.lower(name), "emc") then
+
+    -- Also check for 'emc' in the peripheral name/side
+    if string.find(string.lower(tostring(name)), "emc") then
         return true
     end
     
