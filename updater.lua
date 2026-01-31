@@ -557,28 +557,24 @@ local function updateScript(scriptName, variant)
         end
     end
     
-    -- Update the root updater and startup
+    -- Update startup.lua only (skip self-update to avoid issues)
     print("")
     print("[INFO] Updating core files...")
     
-    local coreFiles = {
-        {remote = "updater.lua", localPath = "updater.lua"},
-        {remote = "startup.lua", localPath = "startup.lua"},
-    }
-    
-    for _, file in ipairs(coreFiles) do
-        local status, err = downloadWithCompare(file.remote, file.localPath)
-        if status == "updated" then
-            print("[UPDATE] " .. file.localPath)
-            results.updated = results.updated + 1
-        elseif status == "skipped" then
-            print("[SKIP]   " .. file.localPath)
-            results.skipped = results.skipped + 1
-        else
-            print("[FAIL]   " .. file.localPath .. " - " .. tostring(err))
-            results.failed = results.failed + 1
-        end
+    local status, err = downloadWithCompare("startup.lua", "startup.lua")
+    if status == "updated" then
+        print("[UPDATE] startup.lua")
+        results.updated = results.updated + 1
+    elseif status == "skipped" then
+        print("[SKIP]   startup.lua")
+        results.skipped = results.skipped + 1
+    else
+        print("[FAIL]   startup.lua - " .. tostring(err))
+        results.failed = results.failed + 1
     end
+    
+    -- Note about self-update
+    print("[INFO] Note: To update the central updater itself, run: updater --self-update")
     
     -- Save script configuration for startup
     local scriptConfig = {
