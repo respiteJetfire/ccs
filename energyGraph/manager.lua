@@ -4,8 +4,9 @@
     Uses lib.peripherals.energy and lib.display.graph
 ]]
 
-local version = "1.0.0"
+local version = "1.0.1"
 local lib = dofile("lib/init.lua")
+local modemLib = lib.peripherals.modem
 
 -- Load configuration (defaults provided)
 local configDefaults = {
@@ -29,13 +30,32 @@ end
 -- Create buffer
 local graphBuf = lib.display.graph.createBuffer(SAMPLE_MAX)
 
--- Helper to take a sample
+-- Remote broadcast state
+local lastRemote = nil
+local lastRemoteAddedTs = 0
+
+-- Helper to take a sample (see below for remote-preferring implementation)
 local function takeSample()
+    local nowTs = os and os.epoch and os.epoch("utc") or (math.floor(os.time() * 1000))
+    -- If we've received a remote broadcast newer than what we've added, prefer that
+    if lastRemote and (tonumber(lastRemote.ts) or 0) > lastRemoteAddedTs then
+        local lr = lastRemote
+        lastRemoteAddedTs = tonumber(lr.ts) or nowTs
+        graphBuf:add(tonumber(lr.percent) or 0, tonumber(lr.ts) or nowTs)
+        return {
+            ts = tonumber(lr.ts) or nowTs,
+            percent = tonumber(lr.percent) or 0,
+            total = tonumber(lr.total) or 0,
+            max = tonumber(lr.max) or 0,
+            deviceCount = tonumber(lr.deviceCount) or 0
+        }
+    end
+
     local summary = lib.peripherals.energy.getSummary()
     local percent = summary.percent or 0
     local total = summary.total or 0
     local max = summary.max or 0
-    local ts = os and os.epoch and os.epoch("utc") or (math.floor(os.time() * 1000))
+    local ts = nowTs
     graphBuf:add(percent, ts)
     return {
         ts = ts,
@@ -107,16 +127,51 @@ end
 local running = true
 local lastSample = takeSample()
 drawUI(lastSample)
-
--- Main loop: sample and redraw
-while running do
-    local ok, e = pcall(function()
-        sleep(CHECK_INTERVAL)
-        lastSample = takeSample()
-        drawUI(lastSample)
-    end)
-    if not ok then
-        print("[ERROR] " .. tostring(e))
-        running = false
+local function messageListener()
+    if not modemLib then
+        print("[INFO] Modem library not available; skipping rednet listener")
+        return
     end
+
+    local ok, err = modemLib.openRednet()
+    if not ok then
+        print("[INFO] Rednet not available: " .. tostring(err))
+        return
+    end
+
+    while true do
+        local sender, msg, proto = rednet.receive()
+        -- Expecting a table-like message with fields: percent, total, max, ts, deviceCount
+        local sOk, sErr = pcall(function()
+            if type(msg) == "table" then
+                if not msg.ts then msg.ts = (os and os.epoch and os.epoch("utc")) or (math.floor(os.time() * 1000)) end
+                lastRemote = msg
+            end
+        end)
+        if not sOk then
+            print("[WARN] Error processing rednet message: " .. tostring(sErr))
+        end
+    end
+end
+
+local function uiLoop()
+    while running do
+        local ok, e = pcall(function()
+            sleep(CHECK_INTERVAL)
+            lastSample = takeSample()
+            drawUI(lastSample)
+        end)
+        if not ok then
+            print("[ERROR] " .. tostring(e))
+            running = false
+        end
+    end
+end
+
+-- Run UI and message listener concurrently (listener may exit if rednet unavailable)
+if parallel and type(parallel.waitForAny) == "function" then
+    parallel.waitForAny(uiLoop, messageListener)
+else
+    -- Fallback: run ui loop only
+    uiLoop()
 end
