@@ -20,7 +20,7 @@
     @author CCScripts
 ]]
 
-local VERSION = "2.0.0"
+local VERSION = "2.0.1"
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -304,6 +304,7 @@ local SCRIPT_MANIFESTS = {
             "display/renderer.lua",
             "display/colors.lua",
             "display/monitor.lua",
+            "display/layout.lua",
             "data/stale.lua",
         }
     },
