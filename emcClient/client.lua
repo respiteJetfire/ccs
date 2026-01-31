@@ -1,5 +1,5 @@
 -- CC script to receive and display EMC data from EMC masters
-local version = "0.3.1"
+local version = "0.3.2"
 
 -- Load shared library (lib dependencies: config.manager, config.wizard, peripherals.modem,
 -- peripherals.monitor, format.numbers, data.stale, display.renderer, display.colors, network.rednet)
@@ -510,25 +510,30 @@ local function listenForUpdates()
             if success and data and data.type == "emc_status" then
                 local playerName = data.playerName
                 
-                -- Check if we should display this player
-                if not filterName or filterName == playerName then
-                    -- Store previous EMC value before updating
-                    local previousEMC = nil
-                    if playerData[playerName] then
-                        previousEMC = playerData[playerName].emcValue
+                    -- Validate playerName before using as table key
+                if not playerName or type(playerName) ~= "string" or playerName == "" then
+                    print("[WARN] Received message with invalid playerName")
+                else
+                    -- Check if we should display this player
+                    if not filterName or filterName == playerName then
+                        -- Store previous EMC value before updating
+                        local previousEMC = nil
+                        if playerData[playerName] then
+                            previousEMC = playerData[playerName].emcValue
+                        end
+                        
+                        playerData[playerName] = {
+                            emcValue = data.emcValue,
+                            previousEMC = previousEMC,
+                            lastUpdate = lib.data.stale.getCurrentTime()
+                        }
+                        
+                        print(string.format("[UPDATE] %s: %s", 
+                            playerName,
+                            formatEMC(data.emcValue, SIZE_MEDIUM)))
+                        
+                        updateDisplay()
                     end
-                    
-                    playerData[playerName] = {
-                        emcValue = data.emcValue,
-                        previousEMC = previousEMC,
-                        lastUpdate = lib.data.stale.getCurrentTime()
-                    }
-                    
-                    print(string.format("[UPDATE] %s: %s", 
-                        playerName,
-                        formatEMC(data.emcValue, SIZE_MEDIUM)))
-                    
-                    updateDisplay()
                 end
             end
         end
