@@ -1,6 +1,6 @@
 --[[
     CC Scripts Library Loader
-    Version: 1.0.0
+    Version: 1.0.1
     
     Central loader for all library modules.
     Provides lazy loading and caching of library modules.
@@ -21,7 +21,7 @@
 ]]
 
 local lib = {
-    _VERSION = "1.0.0",
+    _VERSION = "1.0.1",
     _DESCRIPTION = "CC Scripts Library Loader",
     _AUTHOR = "CCScripts",
     _LICENSE = "MIT"
@@ -122,7 +122,24 @@ function lib.load(moduleName)
         error("Module file not found: " .. fullPath)
     end
     
+    -- Provide a temporary global `require` that resolves `lib.` prefixed
+    -- module names to this loader so modules can call `require("lib.xxx")`
+    -- while being loaded via `dofile`.
+    local oldRequire = _G.require
+    _G.require = function(name)
+        if type(name) == "string" and name:sub(1,4) == "lib." then
+            local subName = name:sub(5)
+            return lib.load(subName)
+        elseif oldRequire then
+            return oldRequire(name)
+        else
+            error("require is not available for module: " .. tostring(name))
+        end
+    end
+
     local success, result = pcall(dofile, fullPath)
+    -- restore original require to avoid leaking into caller environment
+    _G.require = oldRequire
     if not success then
         error("Failed to load module " .. moduleName .. ": " .. tostring(result))
     end

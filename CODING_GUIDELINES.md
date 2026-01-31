@@ -933,7 +933,7 @@ local filesToUpdate = {
 - [ ] Create folder: `scriptName/`
 - [ ] Create `manager.lua` with standard template
 - [ ] Create `startup.lua` with standard pattern
-- [ ] Create `updater.lua` with file list
+- [ ] Create `updater.lua` with file list ensuring lib dependencies are identified and added to the updater list
 - [ ] Add configuration support if needed
 - [ ] Add first-run wizard if user input required
 - [ ] Use lib functions for all common operations
