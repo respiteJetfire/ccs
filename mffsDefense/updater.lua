@@ -11,12 +11,12 @@
     Or for fresh install:
         wget run https://raw.githubusercontent.com/respiteJetfire/ccs/main/mffsDefense/updater.lua
     
-    @version 2.0.1
+    @version 2.0.2
     @author CCScripts
 ]]
 
 local SCRIPT_NAME = "mffsDefense"
-local VERSION = "2.0.1"
+local VERSION = "2.0.2"
 
 print("[INFO] MFFS Defense Bootstrap v" .. VERSION)
 print("")
@@ -30,8 +30,6 @@ local function downloadFile(remotePath, localPath)
     if response then
         local content = response.readAll()
         response.close()
-        
-        -- Ensure we got actual content, not an error page
         if content and #content > 100 and not content:find("<!DOCTYPE") then
             local file = fs.open(localPath, "w")
             file.write(content)
@@ -42,9 +40,9 @@ local function downloadFile(remotePath, localPath)
     return false
 end
 
--- Ensure central updater exists at root (use absolute path)
-local centralUpdater = "/updater.lua"
-if not fs.exists(centralUpdater) or fs.getSize(centralUpdater) < 5000 then
+-- Ensure central updater exists at root (relative path, not absolute!)
+local centralUpdater = "updater.lua"
+if not fs.exists(centralUpdater) or fs.getSize(centralUpdater) < 1000 then
     print("[INFO] Downloading central updater...")
     if not downloadFile("updater.lua", centralUpdater) then
         print("[ERROR] Failed to download central updater")
@@ -54,7 +52,6 @@ if not fs.exists(centralUpdater) or fs.getSize(centralUpdater) < 5000 then
     print("[OK] Central updater downloaded")
 end
 
--- Run the central updater with this script name (use absolute path!)
 print("[INFO] Running updater for " .. SCRIPT_NAME .. "...")
 print("")
 shell.run(centralUpdater, SCRIPT_NAME)
