@@ -1,7 +1,7 @@
 -- energyGraph/updater.lua
 -- Downloader that fetches files from the repository's raw URLs when HTTP is available.
 
-local version = "1.0.0"
+local version = "1.1.0"
 print("[INFO] Updater v" .. version .. " starting...")
 
 local repoBase = "https://raw.githubusercontent.com/respiteJetfire/ccs/main/"
@@ -9,6 +9,8 @@ local files = {
 	"energyGraph/manager.lua",
 	"energyGraph/startup.lua",
 	"energyGraph/updater.lua",
+    "lib/init.lua",
+    "lib/peripherals/modem.lua",
 	"lib/display/graph.lua"
 }
 
