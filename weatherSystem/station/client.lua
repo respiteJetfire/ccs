@@ -1,7 +1,7 @@
 -- weatherSystem/station/client.lua
 -- Weather Client v1.1.0 - Display-only, no registration
 -- Shows weather forecasts from other stations without registering as a station
-local version = "1.3.0"
+local version = "1.3.1"
 
 print("[INFO] Weather Client v" .. version .. " starting...")
 
@@ -238,7 +238,8 @@ local function receiveLoop()
     requestForecast()
     
     while true do
-        local senderId, message = rednet.receive(STATION_PROTOCOL, 5)
+        -- Listen for any protocol to catch forecast broadcasts
+        local senderId, message, protocol = rednet.receive(nil, 5)
         if senderId and message then
             local packet = message
             if type(message) == "string" then
@@ -246,16 +247,36 @@ local function receiveLoop()
             end
             
             if type(packet) == "table" then
-                if processForecast(packet) then
-                    print("[RECV] Forecast received from " .. tostring(senderId))
-                    updateCachedStation()
+                -- Process forecast from any weather protocol message
+                if packet.type == "forecast_response" or packet.type == "forecast_broadcast" then
+                    if processForecast(packet) then
+                        print("[RECV] Forecast received from " .. tostring(senderId))
+                        updateCachedStation()
+                    end
                 end
             end
         end
         
-        -- Request forecast every 30 seconds if we don't have data
+        -- Request forecast only if:
+        -- 1. We never received data (and it's been >10s since last request)
+        -- 2. Data is very stale (>3 minutes old)
         local now = os.epoch("utc")
-        if not currentForecast or (now - lastRequest) > 30000 then
+        local shouldRequest = false
+        
+        if not currentForecast then
+            -- No data yet - request every 10 seconds
+            if (now - lastRequest) > 10000 then
+                shouldRequest = true
+            end
+        elseif currentForecast.generatedAt then
+            -- Have data - only request if very stale (3+ minutes)
+            local age = now - currentForecast.generatedAt
+            if age > 180000 and (now - lastRequest) > 60000 then
+                shouldRequest = true
+            end
+        end
+        
+        if shouldRequest then
             requestForecast()
         end
     end

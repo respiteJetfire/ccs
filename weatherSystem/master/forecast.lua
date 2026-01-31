@@ -7,7 +7,7 @@
 -- It does not depend on the shared lib as it handles weather-specific calculations.
 -- The forecast data structures are consumed by the master.lua controller.
 
-local version = "6.1.0"
+local version = "6.1.1"
 
 local forecast = {}
 
@@ -532,7 +532,9 @@ end
 
 -- Compute weather change without applying commands
 function forecast.computeWeather(currentTick, gameDay)
-    local currentHour = math.floor((os.time() * 1000) / forecast.TICKS_PER_HOUR) % 24
+    -- Normalize to current day and get hour (handle persistent server large tick values)
+    local normalizedTick = (os.time() * forecast.TICKS_PER_HOUR) % forecast.TICKS_PER_DAY
+    local currentHour = math.floor(normalizedTick / forecast.TICKS_PER_HOUR)
     
     -- Only check once per hour
     if globalWeatherState.lastForecastHour == currentHour and 
@@ -622,7 +624,9 @@ end
 function forecast.generate(stationsData)
     local gameTime = os.time()
     local gameDay = os.day()
-    local currentHour = math.floor((gameTime * 1000) / forecast.TICKS_PER_HOUR) % 24
+    -- Normalize tick value for persistent server (gameTime can be very large)
+    local normalizedTick = (gameTime * forecast.TICKS_PER_HOUR) % forecast.TICKS_PER_DAY
+    local currentHour = math.floor(normalizedTick / forecast.TICKS_PER_HOUR)
     
     -- Pre-generate weather pattern
     generate120DayPattern(gameDay)

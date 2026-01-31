@@ -3,7 +3,7 @@
 -- Master handles all forecasting - station registers and displays
 -- Dependencies: lib (peripherals.modem, peripherals.monitor, peripherals.environment,
 --               network.rednet, network.protocol, data.stale)
-local version = "8.2.0"
+local version = "8.2.1"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -381,8 +381,9 @@ end
 
 -- Receive loop using lib.network
 local function receiveLoop()
+    local lastForecastRequest = 0
     while true do
-        local senderId, message, protocol, err = lib.network.rednet.receive(nil, 30)
+        local senderId, message, protocol, err = lib.network.rednet.receive(nil, 10)
         if senderId and message then
             local packet = message
             -- lib.network.rednet.receive auto-deserializes tables
@@ -398,10 +399,17 @@ local function receiveLoop()
         end
         
         -- Check if forecast is stale or missing using lib.data.stale
+        -- Only request if we haven't requested recently
+        local now = os.epoch("utc")
+        local timeSinceLastRequest = now - lastForecastRequest
         local forecastStale = not currentForecast or 
-            (currentForecast.generatedAt and lib.data.stale.isStale(currentForecast.generatedAt, 120000))
-        if forecastStale then
+            (currentForecast.generatedAt and lib.data.stale.isStale(currentForecast.generatedAt, 180000))
+        
+        -- Only request if stale AND we haven't requested in the last 30 seconds
+        if forecastStale and timeSinceLastRequest > 30000 then
             requestForecast()
+            lastForecastRequest = now
+            print("[REQ] Forecast requested")
         end
     end
 end

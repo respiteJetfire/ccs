@@ -12,7 +12,7 @@
 --   - lib.data.tracking: Station tracking with staleness
 --   - lib.format.time: Minecraft time formatting
 
-local version = "5.3.0"
+local version = "5.3.1"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -244,8 +244,9 @@ local function updateForecast()
     currentForecast = forecast.generate(getAllStations())
     
     if currentForecast then
-        -- Use lib.format.time for displaying time if needed
-        local timeStr = lib.format.time.formatMinecraftTime(currentForecast.gameTime * 1000)
+        -- Use lib.format.time for displaying time
+        local ticks = (currentForecast.gameTime * lib.format.time.TICKS_PER_HOUR) % lib.format.time.TICKS_PER_DAY
+        local timeStr = lib.format.time.formatMinecraftTime(ticks)
         print("[FORECAST] Updated at " .. timeStr .. ": " .. (currentForecast.summary or "Unknown"))
         print("[FORECAST] Season: " .. (currentForecast.season or "Unknown"))
         if currentForecast.current then
@@ -291,11 +292,22 @@ local function forecastLoop()
     end
 end
 
--- Broadcast loop
+-- Broadcast loop - broadcasts once per Minecraft hour (50 seconds real time)
 local function broadcastLoop()
+    local lastBroadcastHour = -1
     while true do
-        sleep(CONFIG.BROADCAST_INTERVAL)
-        broadcastForecast()
+        -- Calculate current Minecraft hour using lib.format.time
+        -- os.time() returns hours (0-24) but we need to handle large tick values
+        local currentTick = (os.time() * lib.format.time.TICKS_PER_HOUR) % lib.format.time.TICKS_PER_DAY
+        local currentHour = math.floor(currentTick / lib.format.time.TICKS_PER_HOUR)
+        
+        -- Only broadcast when the hour changes
+        if currentHour ~= lastBroadcastHour then
+            broadcastForecast()
+            lastBroadcastHour = currentHour
+        end
+        
+        sleep(5)  -- Check every 5 seconds for hour changes
     end
 end
 
@@ -363,9 +375,12 @@ local function weatherControlLoop()
         -- Only update weather at the start of each new hour
         local currentHour = nil
         if envTime then
-            currentHour = math.floor((envTime / 1000) % 24)
+            -- envTime is already in ticks, normalize to day and get hour
+            currentHour = math.floor((envTime % lib.format.time.TICKS_PER_DAY) / lib.format.time.TICKS_PER_HOUR)
         else
-            currentHour = math.floor((os.time() * 1000 / 1000) % 24)
+            -- os.time() returns 0-24 hours, convert to ticks and normalize
+            local ticks = (os.time() * lib.format.time.TICKS_PER_HOUR) % lib.format.time.TICKS_PER_DAY
+            currentHour = math.floor(ticks / lib.format.time.TICKS_PER_HOUR)
         end
 
         if lastEnvTime ~= currentHour then
@@ -388,7 +403,8 @@ local function weatherControlLoop()
                 end
             else
                 -- Fallback: use forecast
-                local currentTick = os.time() * 1000
+                -- Normalize tick for persistent server using lib.format.time
+                local currentTick = (os.time() * lib.format.time.TICKS_PER_HOUR) % lib.format.time.TICKS_PER_DAY
                 local gameDay = os.day()
                 local result = forecast.computeWeather(currentTick, gameDay)
                 if result and result.changed and result.mode then
