@@ -1,5 +1,5 @@
 -- CC script to receive and display EMC data from EMC masters
-local version = "0.3.2"
+local version = "0.3.3"
 
 -- Load shared library (lib dependencies: config.manager, config.wizard, peripherals.modem,
 -- peripherals.monitor, format.numbers, data.stale, display.renderer, display.colors, network.rednet)
@@ -508,11 +508,16 @@ local function listenForUpdates()
         if message then
             local success, data = pcall(textutils.unserialize, message)
             if success and data and data.type == "emc_status" then
-                local playerName = data.playerName
+                -- Protocol library wraps data in a nested structure
+                local payload = data.data or data
+                local playerName = payload.playerName
+                local emcValue = payload.emcValue
                 
-                    -- Validate playerName before using as table key
+                -- Validate playerName before using as table key
                 if not playerName or type(playerName) ~= "string" or playerName == "" then
                     print("[WARN] Received message with invalid playerName")
+                elseif not emcValue then
+                    print("[WARN] Received message with missing emcValue")
                 else
                     -- Check if we should display this player
                     if not filterName or filterName == playerName then
@@ -523,14 +528,14 @@ local function listenForUpdates()
                         end
                         
                         playerData[playerName] = {
-                            emcValue = data.emcValue,
+                            emcValue = emcValue,
                             previousEMC = previousEMC,
                             lastUpdate = lib.data.stale.getCurrentTime()
                         }
                         
                         print(string.format("[UPDATE] %s: %s", 
                             playerName,
-                            formatEMC(data.emcValue, SIZE_MEDIUM)))
+                            formatEMC(emcValue, SIZE_MEDIUM)))
                         
                         updateDisplay()
                     end
