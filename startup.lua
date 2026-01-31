@@ -20,7 +20,10 @@
     @author CCScripts
 ]]
 
-local VERSION = "2.0.0"
+local VERSION = "2.0.1"
+
+-- Capture command line arguments at top level
+local args = {...}
 
 --------------------------------------------------------------------------------
 -- Configuration Loading
@@ -57,8 +60,7 @@ end
 -- By default, check for updates every boot
 -- @return boolean True if should update
 local function shouldUpdate()
-    -- Check for skip update flag
-    local args = {...}
+    -- Check for skip update flag from captured args
     for _, arg in ipairs(args) do
         if arg == "--no-update" or arg == "-n" then
             return false
