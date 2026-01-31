@@ -67,6 +67,7 @@ local modulePaths = {
     ["display.layout"] = "display/layout.lua",
     ["display.colors"] = "display/colors.lua",
     ["display.renderer"] = "display/renderer.lua",
+    ["display.graph"] = "display/graph.lua",
     
     -- Format
     ["format.numbers"] = "format/numbers.lua",
