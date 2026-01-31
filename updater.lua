@@ -20,7 +20,7 @@
     @author CCScripts
 ]]
 
-local VERSION = "2.0.1"
+local VERSION = "2.0.2"
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -178,6 +178,7 @@ local SCRIPT_MANIFESTS = {
             "config/wizard.lua",
             "display/colors.lua",
             "display/monitor.lua",
+            "display/layout.lua",
         }
     },
     
@@ -199,6 +200,7 @@ local SCRIPT_MANIFESTS = {
             "display/renderer.lua",
             "display/colors.lua",
             "display/monitor.lua",
+            "display/layout.lua",
             "data/stale.lua",
             "config/manager.lua",
             "config/wizard.lua",
@@ -282,6 +284,7 @@ local SCRIPT_MANIFESTS = {
             "format/numbers.lua",
             "display/renderer.lua",
             "display/colors.lua",
+            "display/layout.lua",
             "data/stale.lua",
         }
     },
@@ -430,6 +433,7 @@ local SCRIPT_MANIFESTS = {
             "network/protocol.lua",
             "display/monitor.lua",
             "display/colors.lua",
+            "display/layout.lua",
             "format/time.lua",
             "config/manager.lua",
             "config/wizard.lua",
@@ -451,6 +455,7 @@ local SCRIPT_MANIFESTS = {
                     "network/rednet.lua",
                     "display/monitor.lua",
                     "display/colors.lua",
+                    "display/layout.lua",
                 }
             }
         }
