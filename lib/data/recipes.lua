@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.3.0"
+recipes._VERSION = "1.4.0"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -103,34 +103,51 @@ local function findRecipeDataFile()
     return nil
 end
 
---- Find all recipe part files (multi-part mode)
--- @return table Array of {path=string, partNum=number}
-local function findRecipePartFiles()
-    local parts = {}
-    local foundParts = {}  -- Track which part numbers we've found
-    local checkedPaths = {}  -- For debugging
+--- Recursively search a directory for recipe part files
+-- @param dir string Directory to search
+-- @param parts table Table to add found parts to
+-- @param foundParts table Set of part numbers already found
+local function searchDirectory(dir, parts, foundParts)
+    if not fs.exists(dir) or not fs.isDir(dir) then
+        return
+    end
     
-    -- Try each pattern
-    for _, pattern in ipairs(RECIPE_PART_PATHS) do
-        -- Look for parts 1-20
-        for partNum = 1, 20 do
-            local path = string.format(pattern, partNum)
-            table.insert(checkedPaths, path)
-            if fs.exists(path) and not foundParts[partNum] then
-                table.insert(parts, {path = path, partNum = partNum})
-                foundParts[partNum] = true
+    local files = fs.list(dir)
+    for _, file in ipairs(files) do
+        local path = fs.combine(dir, file)
+        
+        if fs.isDir(path) then
+            -- Recursively search subdirectories
+            searchDirectory(path, parts, foundParts)
+        else
+            -- Check if this is a recipe part file
+            local partNum = file:match("^recipe_data_part(%d+)%.lua$")
+            if partNum then
+                partNum = tonumber(partNum)
+                if not foundParts[partNum] then
+                    table.insert(parts, {path = path, partNum = partNum})
+                    foundParts[partNum] = true
+                end
             end
         end
     end
+end
+
+--- Find all recipe part files by scanning disks
+-- @return table Array of {path=string, partNum=number}
+local function findRecipePartFiles()
+    local parts = {}
+    local foundParts = {}
     
-    -- Debug output if no parts found
-    if #parts == 0 then
-        print("[DEBUG] No part files found. Checked paths:")
-        for i = 1, math.min(20, #checkedPaths) do
-            print("  - " .. checkedPaths[i])
-        end
-        if #checkedPaths > 20 then
-            print("  ... and " .. (#checkedPaths - 20) .. " more")
+    -- Search root lib directory
+    searchDirectory("lib", parts, foundParts)
+    
+    -- Search all mounted disks
+    for i = 1, 20 do
+        local diskPath = i == 1 and "disk" or ("disk" .. i)
+        if fs.exists(diskPath) and fs.isDir(diskPath) then
+            print("[INFO] Scanning " .. diskPath .. " for recipe parts...")
+            searchDirectory(diskPath, parts, foundParts)
         end
     end
     
