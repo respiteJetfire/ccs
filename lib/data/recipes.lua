@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.4.1"
+recipes._VERSION = "1.4.2"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -140,6 +140,7 @@ local function findRecipePartFiles()
     local foundParts = {}
     
     print("[INFO] Searching for recipe part files...")
+    os.sleep(0.5)
     
     -- Search root lib directory
     if fs.exists("lib") and fs.isDir("lib") then
@@ -158,8 +159,10 @@ local function findRecipePartFiles()
     
     if #diskPaths == 0 then
         print("[WARN] No disk drives found mounted")
+        os.sleep(1)
     else
         print("[INFO] Found " .. #diskPaths .. " mounted disk(s)")
+        os.sleep(0.5)
         for _, diskPath in ipairs(diskPaths) do
             print("[INFO] Scanning " .. diskPath .. " for recipe parts...")
             searchDirectory(diskPath, parts, foundParts)
@@ -168,6 +171,7 @@ local function findRecipePartFiles()
     
     if #parts == 0 then
         print("[WARN] No recipe part files found")
+        os.sleep(1.5)
     else
         print("[INFO] Found recipe parts: " .. table.concat(
             (function()
@@ -179,6 +183,7 @@ local function findRecipePartFiles()
             end)(),
             ", "
         ))
+        os.sleep(1)
     end
     
     -- Sort by part number
