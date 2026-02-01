@@ -12,7 +12,7 @@
 --   - lib.data.tracking: Station tracking with staleness
 --   - lib.format.time: Minecraft time formatting
 
-local version = "5.3.1"
+local version = "5.3.2"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -90,6 +90,7 @@ local function getActiveStations()
         if station then
             table.insert(active, {
                 id = station.id,
+                computerId = station.computerId,  -- Include numeric computer ID
                 name = station.name,
                 biome = station.biome,
                 dimension = station.dimension,
@@ -127,6 +128,7 @@ local function processStationPacket(senderId, packet)
         -- Station registration with biome data
         local stationData = {
             id = stationId,
+            computerId = senderId,  -- Store numeric computer ID for sending
             name = packet.station and packet.station.name or ("Station " .. stationId),
             biome = packet.biome or "minecraft:plains",
             dimension = packet.dimension or "minecraft:overworld",
@@ -154,6 +156,7 @@ local function processStationPacket(senderId, packet)
         local existingStation = lib.data.tracking.get(stationTracker, stationId, true)
         if existingStation then
             -- Update station data
+            existingStation.computerId = senderId  -- Preserve/update numeric computer ID
             if packet.biome then existingStation.biome = packet.biome end
             if packet.dimension then existingStation.dimension = packet.dimension end
             if packet.altitude then existingStation.altitude = packet.altitude end
@@ -187,6 +190,7 @@ end
 
 -- Send forecast to a specific station
 -- Uses lib.network.rednet for sending
+-- Parameters: computerId (numeric computer ID), stationId (string station ID for forecast lookup)
 function sendForecastToStation(computerId, stationId)
     if not currentForecast then return end
     
@@ -267,7 +271,8 @@ local function broadcastForecast()
     
     -- Broadcast to all stations
     for _, station in ipairs(activeStations) do
-        sendForecastToStation(tonumber(station.id) or station.id, station.id)
+        local computerId = station.computerId or tonumber(station.id) or station.id
+        sendForecastToStation(computerId, station.id)
     end
     
     print("[BROADCAST] Forecast sent to " .. #activeStations .. " stations")
