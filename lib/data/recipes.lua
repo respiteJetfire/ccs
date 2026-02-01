@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.4.2"
+recipes._VERSION = "1.4.3"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -227,29 +227,47 @@ local function loadRecipeData()
     local parts = findRecipePartFiles()
     if #parts > 0 then
         print(string.format("[INFO] Found %d recipe part files", #parts))
+        os.sleep(0.5)
         
         local recipeTables = {}
         local totalLoaded = 0
+        local totalRecipes = 0
         
         for _, part in ipairs(parts) do
-            print(string.format("[INFO] Loading part %d: %s", part.partNum, part.path))
+            print(string.format("[INFO] Loading part %d from: %s", part.partNum, part.path))
             
             local success, data = pcall(dofile, part.path)
             if success and type(data) == "table" then
+                local recipeCount = 0
+                for _ in pairs(data) do
+                    recipeCount = recipeCount + 1
+                end
+                print(string.format("[INFO] Part %d loaded: %d recipes", part.partNum, recipeCount))
                 table.insert(recipeTables, data)
                 table.insert(recipeDataLoadedFrom, part.path)
                 totalLoaded = totalLoaded + 1
+                totalRecipes = totalRecipes + recipeCount
             else
-                print("[WARN] Failed to load " .. part.path .. ": " .. tostring(data))
+                print("[ERROR] Failed to load part " .. part.partNum .. ": " .. tostring(data))
+                os.sleep(1)
             end
         end
         
         if totalLoaded > 0 then
-            print(string.format("[INFO] Loaded %d of %d parts, merging...", totalLoaded, #parts))
+            print(string.format("[INFO] Successfully loaded %d of %d parts (%d recipes total)", totalLoaded, #parts, totalRecipes))
+            print("[INFO] Merging recipe parts...")
+            os.sleep(0.5)
             recipeData = mergeRecipes(recipeTables)
+            local finalCount = 0
+            for _ in pairs(recipeData) do
+                finalCount = finalCount + 1
+            end
+            print(string.format("[INFO] Merge complete: %d unique recipes available", finalCount))
+            os.sleep(1)
             return recipeData
         else
-            print("[WARN] No recipe parts could be loaded")
+            print("[ERROR] No recipe parts could be loaded")
+            os.sleep(1.5)
         end
     end
     
