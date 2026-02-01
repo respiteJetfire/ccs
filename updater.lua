@@ -20,7 +20,7 @@
     @author CCScripts
 ]]
 
-local VERSION = "2.0.3"
+local VERSION = "2.0.4"
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -416,25 +416,21 @@ local SCRIPT_MANIFESTS = {
             "config/manager.lua",
             "config/wizard.lua",
             "data/recipes.lua",
-            -- NOTE: Recipe part files are NOT auto-downloaded due to size
-            -- Recipe data split across 9 floppy disks (~460KB each)
-            -- See autoCrafter/README.md for multi-disk setup instructions
+            -- NOTE: Recipe part files are auto-discovered and downloaded
+            -- System will scan for recipe_data_part*.lua files and download all found
         },
-        -- Large files that must go on floppy disks (not auto-downloaded)
-        floppyFiles = {
-            "lib/data/recipes/recipe_data_part1.lua",  -- ~460KB - Disk 1
-            "lib/data/recipes/recipe_data_part2.lua",  -- ~460KB - Disk 2
-            "lib/data/recipes/recipe_data_part3.lua",  -- ~460KB - Disk 3
-            "lib/data/recipes/recipe_data_part4.lua",  -- ~460KB - Disk 4
-            "lib/data/recipes/recipe_data_part5.lua",  -- ~460KB - Disk 5
-            "lib/data/recipes/recipe_data_part6.lua",  -- ~460KB - Disk 6
-            "lib/data/recipes/recipe_data_part7.lua",  -- ~460KB - Disk 7
-            "lib/data/recipes/recipe_data_part8.lua",  -- ~460KB - Disk 8
-            "lib/data/recipes/recipe_data_part9.lua",  -- ~127KB - Disk 9
-        },
-        setupNotes = [[Recipe data split across 9 floppy disks (~5MB total).
-Copy each part to separate disks: part1 to /disk/, part2 to /disk2/, etc.
-Files will auto-load and merge at runtime. See README for details.]],
+        -- Function to generate floppy file list dynamically
+        getFloppyFiles = function()
+            local files = {}
+            -- Generate paths for all 59 recipe part files
+            for i = 1, 59 do
+                table.insert(files, string.format("lib/data/recipes/recipe_data_part%d.lua", i))
+            end
+            return files
+        end,
+        setupNotes = [[Recipe data split across 59 files (~70KB each, ~4MB total).
+Files will be automatically distributed across available disks.
+System uses recursive scanning to find parts anywhere on mounted disks.]],
     },
     
     ["colonyManager"] = {
@@ -897,6 +893,16 @@ local function updateScript(scriptName, variant)
         if not floppySuccess then
             print("[WARN] Some floppy files failed to copy")
             results.failed = results.failed + floppyResults.failed
+        end
+    elseif manifest.getFloppyFiles then
+        -- Dynamic floppy file generation
+        local floppyFiles = manifest.getFloppyFiles()
+        if floppyFiles and #floppyFiles > 0 then
+            local floppySuccess, floppyResults = installFloppyFiles(floppyFiles)
+            if not floppySuccess then
+                print("[WARN] Some floppy files failed to copy")
+                results.failed = results.failed + floppyResults.failed
+            end
         end
     end
     

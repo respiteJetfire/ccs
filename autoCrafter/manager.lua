@@ -41,7 +41,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.0.0"
+local version = "2.0.1"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -393,26 +393,17 @@ if stats.loaded then
 else
     print("[WARN] Recipe database not loaded!")
     print("")
-    print("  Recipe data files not found. The recipe database (~5MB total) is too")
-    print("  large for normal computer storage and must be split across multiple")
-    print("  floppy disks (512KB each).")
+    print("  Recipe data files not found. The recipe database (~4MB total) is")
+    print("  split into 59 small files (~70KB each, 200 recipes per file).")
     print("")
     print("  Setup instructions:")
-    print("    1. Run split_recipes.py to create 9 part files (~460KB each)")
-    print("    2. Craft 9 floppy disks and 9 disk drives")
-    print("    3. Attach all disk drives to this computer")
-    print("    4. Insert one floppy disk in each drive")
-    print("    5. Copy one part file to each disk:")
-    print("       cp lib/data/recipes/recipe_data_part1.lua /disk/")
-    print("       cp lib/data/recipes/recipe_data_part2.lua /disk2/")
-    print("       cp lib/data/recipes/recipe_data_part3.lua /disk3/")
-    print("       ... etc through part9")
-    print("    6. Restart this script")
+    print("    1. Run: updater autoCrafter")
+    print("    2. Insert floppy disks when prompted")
+    print("    3. Files will be distributed automatically across disks")
     print("")
-    print("  The script will automatically find and merge all parts.")
+    print("  The script recursively scans all mounted disks for recipe parts")
+    print("  and automatically merges them at runtime.")
     print("")
-    print("  Alternative: Use wget to download parts directly to disks:")
-    print("    wget <url>/recipe_data_part1.lua /disk/recipe_data_part1.lua")
     print("")
 end
 
