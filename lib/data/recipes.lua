@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.2.0"
+recipes._VERSION = "1.3.0"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -108,16 +108,29 @@ end
 local function findRecipePartFiles()
     local parts = {}
     local foundParts = {}  -- Track which part numbers we've found
+    local checkedPaths = {}  -- For debugging
     
     -- Try each pattern
     for _, pattern in ipairs(RECIPE_PART_PATHS) do
         -- Look for parts 1-20
         for partNum = 1, 20 do
             local path = string.format(pattern, partNum)
+            table.insert(checkedPaths, path)
             if fs.exists(path) and not foundParts[partNum] then
                 table.insert(parts, {path = path, partNum = partNum})
                 foundParts[partNum] = true
             end
+        end
+    end
+    
+    -- Debug output if no parts found
+    if #parts == 0 then
+        print("[DEBUG] No part files found. Checked paths:")
+        for i = 1, math.min(20, #checkedPaths) do
+            print("  - " .. checkedPaths[i])
+        end
+        if #checkedPaths > 20 then
+            print("  ... and " .. (#checkedPaths - 20) .. " more")
         end
     end
     
