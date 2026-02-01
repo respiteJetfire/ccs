@@ -13,7 +13,7 @@
     @author CCScripts
 ]]
 
-local version = "1.0.1"
+local version = "1.0.2"
 local PASSWORD = "apple"
 
 -- Load shared library
@@ -148,33 +148,47 @@ print("")
 while true do
     local senderId, message = lib.network.rednet.receive()
     
-    -- Convert message to string if it's a table
-    if type(message) == "table" then
-        message = textutils.serialize(message)
-    end
-    message = tostring(message)
+    print("[RECV] From " .. tostring(senderId))
     
-    print("[RECV] From " .. tostring(senderId) .. ": " .. message)
-    
-    -- Parse password and command
-    local password, command = message:match("^(%S+)%s+(.+)$")
-    
-    if not password or password ~= PASSWORD then
-        print("[AUTH] Invalid password. Ignoring message.")
-    elseif command == "info" then
-        processInfoRequest(senderId)
-    else
-        -- Parse item request: "itemName quantity"
-        local itemName, quantityStr = command:match("^(%S+)%s+(%d+)$")
-        local quantity = tonumber(quantityStr)
+    -- Handle protocol message structure (from colonyManager)
+    if type(message) == "table" and message.data then
+        local data = message.data
+        local password = data.password
+        local itemId = data.itemId
+        local quantity = data.quantity
         
-        if itemName and quantity then
-            processItemRequest(senderId, itemName, quantity)
+        if not password or password ~= PASSWORD then
+            print("[AUTH] Invalid password. Ignoring message.")
+        elseif itemId and quantity then
+            print(string.format("[INFO] Request: %s x%d", itemId, quantity))
+            processItemRequest(senderId, itemId, quantity)
         else
-            local response = "Error: Invalid request format. Use 'password item_name quantity' or 'password info'"
+            local response = "Error: Invalid request format. Missing itemId or quantity."
             lib.network.rednet.send(senderId, response)
             print("[SEND] " .. response)
         end
+    -- Handle simple string format (legacy/direct requests)
+    elseif type(message) == "string" then
+        local password, command = message:match("^(%S+)%s+(.+)$")
+        
+        if not password or password ~= PASSWORD then
+            print("[AUTH] Invalid password. Ignoring message.")
+        elseif command == "info" then
+            processInfoRequest(senderId)
+        else
+            local itemName, quantityStr = command:match("^(%S+)%s+(%d+)$")
+            local quantity = tonumber(quantityStr)
+            
+            if itemName and quantity then
+                processItemRequest(senderId, itemName, quantity)
+            else
+                local response = "Error: Invalid request format."
+                lib.network.rednet.send(senderId, response)
+                print("[SEND] " .. response)
+            end
+        end
+    else
+        print("[ERROR] Unrecognized message format")
     end
     
     print("")
