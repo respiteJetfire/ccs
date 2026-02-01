@@ -20,7 +20,7 @@
     @author CCScripts
 ]]
 
-local VERSION = "2.0.2"
+local VERSION = "2.0.3"
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -437,6 +437,7 @@ local SCRIPT_MANIFESTS = {
             "format/time.lua",
             "config/manager.lua",
             "config/wizard.lua",
+            "data/stale.lua",
         },
         variants = {
             ["client"] = {
@@ -456,6 +457,7 @@ local SCRIPT_MANIFESTS = {
                     "display/monitor.lua",
                     "display/colors.lua",
                     "display/layout.lua",
+                    "data/stale.lua",
                 }
             }
         }
