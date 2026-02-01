@@ -2,7 +2,7 @@
 -- Uses MineColonies colony peripheral for ComputerCraft 1.20.1
 -- Dependencies: lib.peripherals.modem, lib.peripherals.colony, lib.data.tracking,
 --               lib.network.rednet, lib.network.protocol
-local version = "0.3.0"
+local version = "0.3.1"
 local PASSWORD = "apple"
 local CHECK_INTERVAL = 10  -- seconds between checks
 
@@ -72,16 +72,19 @@ local function checkColonyRequests()
     if requests and #requests > 0 then
         print("[CHECK] " .. tostring(#requests) .. " request(s) found")
         for _, req in ipairs(requests) do
-            local itemName = req.name or (req.items and req.items[1] and req.items[1].name) or nil
-            local count = req.count or (req.items and req.items[1] and req.items[1].count) or 1
+            -- Extract item ID (not display name) and quantity
+            -- req.items[1].name contains the actual Minecraft item ID (e.g., "minecraft:book")
+            -- req.name contains the display name with count (e.g., "3 Book")
+            local itemId = req.items and req.items[1] and req.items[1].name or nil
+            local quantity = req.items and req.items[1] and req.items[1].count or 1
             
-            if itemName then
-                local requestKey = itemName .. ":" .. tostring(count)
+            if itemId then
+                local requestKey = itemId .. ":" .. tostring(quantity)
                 
                 -- Check if this request is already being tracked (using lib.data.tracking)
                 -- isStale returns true if not found or if entry is older than maxAge
                 if lib.data.tracking.isStale(requestTracker, requestKey) then
-                    requestItems(itemName, count)
+                    requestItems(itemId, quantity)
                     -- Track this request to avoid duplicates
                     lib.data.tracking.track(requestTracker, requestKey, true)
                 end

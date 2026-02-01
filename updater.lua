@@ -144,7 +144,7 @@ local SCRIPT_MANIFESTS = {
     ["colonyManager"] = {
         name = "Colony Manager",
         description = "MineColonies work request monitoring",
-        version = "1.0.0",
+        version = "0.3.1",
         mainScript = "colonyManager/manager.lua",
         files = {
             "colonyManager/manager.lua",
