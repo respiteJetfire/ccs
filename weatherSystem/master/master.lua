@@ -17,7 +17,7 @@
 --   - lib.data.tracking: Station tracking with staleness
 --   - lib.format.time: Minecraft time formatting
 
-local version = "5.3.5"
+local version = "5.3.6"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -58,6 +58,10 @@ local CONFIG = {
 -- Timeout in milliseconds for station staleness
 local stationTracker = lib.data.tracking.createTracker(CONFIG.STATION_TIMEOUT * 1000, true)
 local currentForecast = nil
+
+-- Forward declarations
+local updateForecast
+local sendForecastToStation
 
 -- Initialize network using lib.peripherals.modem
 print("[INFO] Searching for wireless modem...")
@@ -219,7 +223,7 @@ end
 -- Send forecast to a specific station
 -- Uses lib.network.rednet for sending
 -- Parameters: computerId (numeric computer ID), stationId (string station ID for forecast lookup)
-function sendForecastToStation(computerId, stationId)
+sendForecastToStation = function(computerId, stationId)
     if not currentForecast then 
         print("[ERROR] No currentForecast to send")
         return 
@@ -300,7 +304,7 @@ end
 
 -- Generate and update forecast
 -- Uses getAllStations helper which wraps lib.data.tracking
-local function updateForecast()
+updateForecast = function()
     local activeStations = getActiveStations()
     
     -- Generate forecast with all station data (forecast module handles its own registration)
