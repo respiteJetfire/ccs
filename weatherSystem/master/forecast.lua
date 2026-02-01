@@ -14,7 +14,7 @@
 -- It does not depend on the shared lib as it handles weather-specific calculations.
 -- The forecast data structures are consumed by the master.lua controller.
 
-local version = "6.1.2"
+local version = "6.1.3"
 
 local forecast = {}
 
@@ -642,7 +642,12 @@ function forecast.generate(stationsData)
     -- Pre-generate weather pattern
     generate120DayPattern(gameDay)
     
-    print("[FORECAST] Generating forecasts for " .. tostring(#(function() local c=0 for _ in pairs(registeredStations) do c=c+1 end return c end)()) .. " stations")
+    -- Count registered stations
+    local stationCount = 0
+    for _ in pairs(registeredStations) do
+        stationCount = stationCount + 1
+    end
+    print("[FORECAST] Generating forecasts for " .. tostring(stationCount) .. " stations")
     
     -- Generate per-station forecasts
     local stationForecasts = {}
