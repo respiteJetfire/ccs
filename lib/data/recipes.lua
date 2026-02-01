@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.4.0"
+recipes._VERSION = "1.4.1"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -139,16 +139,46 @@ local function findRecipePartFiles()
     local parts = {}
     local foundParts = {}
     
-    -- Search root lib directory
-    searchDirectory("lib", parts, foundParts)
+    print("[INFO] Searching for recipe part files...")
     
-    -- Search all mounted disks
+    -- Search root lib directory
+    if fs.exists("lib") and fs.isDir("lib") then
+        print("[INFO] Scanning lib/ directory...")
+        searchDirectory("lib", parts, foundParts)
+    end
+    
+    -- List all possible disk paths
+    local diskPaths = {}
     for i = 1, 20 do
-        local diskPath = i == 1 and "disk" or ("disk" .. i)
+        local diskPath = i == 1 and "/disk" or ("/disk" .. i)
         if fs.exists(diskPath) and fs.isDir(diskPath) then
+            table.insert(diskPaths, diskPath)
+        end
+    end
+    
+    if #diskPaths == 0 then
+        print("[WARN] No disk drives found mounted")
+    else
+        print("[INFO] Found " .. #diskPaths .. " mounted disk(s)")
+        for _, diskPath in ipairs(diskPaths) do
             print("[INFO] Scanning " .. diskPath .. " for recipe parts...")
             searchDirectory(diskPath, parts, foundParts)
         end
+    end
+    
+    if #parts == 0 then
+        print("[WARN] No recipe part files found")
+    else
+        print("[INFO] Found recipe parts: " .. table.concat(
+            (function()
+                local nums = {}
+                for _, p in ipairs(parts) do
+                    table.insert(nums, tostring(p.partNum))
+                end
+                return nums
+            end)(),
+            ", "
+        ))
     end
     
     -- Sort by part number
