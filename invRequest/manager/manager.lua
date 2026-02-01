@@ -9,11 +9,11 @@
         - lib.peripherals.modem (rednet communication)
         - lib.network.rednet (message handling)
     
-    @version 1.0.0
+    @version 1.0.1
     @author CCScripts
 ]]
 
-local version = "1.0.0"
+local version = "1.0.1"
 local PASSWORD = "apple"
 
 -- Load shared library
@@ -147,12 +147,19 @@ print("")
 
 while true do
     local senderId, message = lib.network.rednet.receive()
-    print("[RECV] From " .. tostring(senderId) .. ": " .. tostring(message))
+    
+    -- Convert message to string if it's a table
+    if type(message) == "table" then
+        message = textutils.serialize(message)
+    end
+    message = tostring(message)
+    
+    print("[RECV] From " .. tostring(senderId) .. ": " .. message)
     
     -- Parse password and command
     local password, command = message:match("^(%S+)%s+(.+)$")
     
-    if password ~= PASSWORD then
+    if not password or password ~= PASSWORD then
         print("[AUTH] Invalid password. Ignoring message.")
     elseif command == "info" then
         processInfoRequest(senderId)
