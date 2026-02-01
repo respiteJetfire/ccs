@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.4.4"
+recipes._VERSION = "1.4.5"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -190,20 +190,27 @@ local function loadRecipeData()
         for _, part in ipairs(parts) do
             print(string.format("[INFO] Loading part %d from: %s", part.partNum, part.path))
             
-            local success, data = pcall(dofile, part.path)
-            if success and type(data) == "table" then
-                local recipeCount = 0
-                for _ in pairs(data) do
-                    recipeCount = recipeCount + 1
-                end
-                print(string.format("[INFO] Part %d loaded: %d recipes", part.partNum, recipeCount))
-                table.insert(recipeTables, data)
-                table.insert(recipeDataLoadedFrom, part.path)
-                totalLoaded = totalLoaded + 1
-                totalRecipes = totalRecipes + recipeCount
-            else
-                print("[ERROR] Failed to load part " .. part.partNum .. ": " .. tostring(data))
+            -- Use loadfile instead of dofile to avoid complexity limits
+            local chunk, err = loadfile(part.path)
+            if not chunk then
+                print("[ERROR] Failed to compile part " .. part.partNum .. ": " .. tostring(err))
                 os.sleep(1)
+            else
+                local success, data = pcall(chunk)
+                if success and type(data) == "table" then
+                    local recipeCount = 0
+                    for _ in pairs(data) do
+                        recipeCount = recipeCount + 1
+                    end
+                    print(string.format("[INFO] Part %d loaded: %d recipes", part.partNum, recipeCount))
+                    table.insert(recipeTables, data)
+                    table.insert(recipeDataLoadedFrom, part.path)
+                    totalLoaded = totalLoaded + 1
+                    totalRecipes = totalRecipes + recipeCount
+                else
+                    print("[ERROR] Failed to execute part " .. part.partNum .. ": " .. tostring(data))
+                    os.sleep(1)
+                end
             end
         end
         
