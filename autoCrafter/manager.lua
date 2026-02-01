@@ -385,9 +385,35 @@ local recipeDB = lib.data.recipes
 local stats = recipeDB.getStats()
 
 if stats.loaded then
-    print(string.format("[INFO] Loaded %d recipes", stats.total))
+    if stats.parts > 1 then
+        print(string.format("[INFO] Loaded %d recipes from %d part files", stats.total, stats.parts))
+    else
+        print(string.format("[INFO] Loaded %d recipes from %s", stats.total, stats.loadedFrom or "unknown"))
+    end
 else
-    print("[WARN] Recipe database not loaded - only custom recipes available")
+    print("[WARN] Recipe database not loaded!")
+    print("")
+    print("  Recipe data files not found. The recipe database (~5MB total) is too")
+    print("  large for normal computer storage and must be split across multiple")
+    print("  floppy disks (512KB each).")
+    print("")
+    print("  Setup instructions:")
+    print("    1. Run split_recipes.py to create 9 part files (~460KB each)")
+    print("    2. Craft 9 floppy disks and 9 disk drives")
+    print("    3. Attach all disk drives to this computer")
+    print("    4. Insert one floppy disk in each drive")
+    print("    5. Copy one part file to each disk:")
+    print("       cp lib/data/recipes/recipe_data_part1.lua /disk/")
+    print("       cp lib/data/recipes/recipe_data_part2.lua /disk2/")
+    print("       cp lib/data/recipes/recipe_data_part3.lua /disk3/")
+    print("       ... etc through part9")
+    print("    6. Restart this script")
+    print("")
+    print("  The script will automatically find and merge all parts.")
+    print("")
+    print("  Alternative: Use wget to download parts directly to disks:")
+    print("    wget <url>/recipe_data_part1.lua /disk/recipe_data_part1.lua")
+    print("")
 end
 
 --------------------------------------------------------------------------------
@@ -1022,13 +1048,27 @@ local function processConsoleInput(input)
         end
         local stats = recipeDB.getStats()
         print("  Recipes: " .. stats.total)
+        if stats.parts > 1 then
+            print("  Recipe Source: " .. stats.parts .. " part files")
+        elseif stats.loadedFrom then
+            print("  Recipe Source: " .. stats.loadedFrom)
+        else
+            print("  Recipe Source: (not loaded)")
+        end
         print("")
     elseif input == "stats" then
         local stats = recipeDB.getStats()
         print("")
         print("Recipe Statistics:")
+        if stats.parts > 1 then
+            print("  Source: " .. stats.parts .. " part files merged")
+        elseif stats.loadedFrom then
+            print("  Source: " .. stats.loadedFrom)
+        end
         print("  Total: " .. stats.total)
         print("  2x2: " .. (stats.shaped2x2 or 0))
+        print("  2x3: " .. (stats.shaped2x3 or 0))
+        print("  3x2: " .. (stats.shaped3x2 or 0))
         print("  3x3: " .. (stats.shaped3x3 or 0))
         print("  Shapeless: " .. (stats.shapeless or 0))
         print("")

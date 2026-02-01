@@ -2,15 +2,22 @@
 -- Recipe database module
 -- Provides access to crafting recipes extracted from CraftTweaker
 -- Supports 2x2, 3x3, and shapeless recipes
+-- 
+-- Recipe data can be stored in multiple locations:
+--   1. lib/data/recipe_data.lua (standard location)
+--   2. /disk/recipe_data.lua (floppy disk - recommended for large files)
+--   3. /disk/recipes/recipe_data.lua (floppy disk subfolder)
+--   4. /disk2/, /disk3/, etc. (additional disk drives)
+--
 -- @module lib.data.recipes
 -- @author CCScripts
--- @version 1.0.0
+-- @version 1.1.0
 ---
 
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.0.0"
+recipes._VERSION = "1.1.0"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -19,27 +26,171 @@ recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 -- The actual recipe data (loaded lazily)
 local recipeData = nil
-local recipeDataPath = "lib/data/recipe_data.lua"
+local recipeDataLoadedFrom = {}  -- Track all sources
 
---- Load recipe data from file
+-- Search paths for recipe data (in priority order)
+-- Supports both single-file and multi-part formats
+local RECIPE_DATA_PATHS = {
+    -- Standard lib location (single file)
+    "lib/data/recipe_data.lua",
+    
+    -- Floppy disk locations - single file
+    "disk/recipe_data.lua",
+    "disk/recipes/recipe_data.lua",
+    "disk/lib/data/recipe_data.lua",
+    "disk2/recipe_data.lua",
+    "disk3/recipe_data.lua",
+    
+    -- Alternative locations
+    "recipes/recipe_data.lua",
+    "data/recipe_data.lua",
+}
+
+-- Search paths for multi-part recipe data
+-- Each disk should contain one part file (recipe_data_part1.lua, etc.)
+local RECIPE_PART_PATHS = {
+    -- Disk drives
+    "disk/recipe_data_part%d.lua",
+    "disk2/recipe_data_part%d.lua",
+    "disk3/recipe_data_part%d.lua",
+    "disk4/recipe_data_part%d.lua",
+    "disk5/recipe_data_part%d.lua",
+    "disk6/recipe_data_part%d.lua",
+    "disk7/recipe_data_part%d.lua",
+    "disk8/recipe_data_part%d.lua",
+    "disk9/recipe_data_part%d.lua",
+    
+    -- Subfolder on disks
+    "disk/recipes/recipe_data_part%d.lua",
+    "disk2/recipes/recipe_data_part%d.lua",
+    "disk3/recipes/recipe_data_part%d.lua",
+    
+    -- Lib folder (if parts are stored there)
+    "lib/data/recipes/recipe_data_part%d.lua",
+    "recipes/recipe_data_part%d.lua",
+}
+
+--- Find the recipe data file (single file mode)
+-- @return string|nil The path to the recipe data file, or nil if not found
+local function findRecipeDataFile()
+    for _, path in ipairs(RECIPE_DATA_PATHS) do
+        if fs.exists(path) then
+            return path
+        end
+    end
+    return nil
+end
+
+--- Find all recipe part files (multi-part mode)
+-- @return table Array of {path=string, partNum=number}
+local function findRecipePartFiles()
+    local parts = {}
+    local foundParts = {}  -- Track which part numbers we've found
+    
+    -- Try each pattern
+    for _, pattern in ipairs(RECIPE_PART_PATHS) do
+        -- Look for parts 1-20
+        for partNum = 1, 20 do
+            local path = string.format(pattern, partNum)
+            if fs.exists(path) and not foundParts[partNum] then
+                table.insert(parts, {path = path, partNum = partNum})
+                foundParts[partNum] = true
+            end
+        end
+    end
+    
+    -- Sort by part number
+    table.sort(parts, function(a, b) return a.partNum < b.partNum end)
+    
+    return parts
+end
+
+--- Merge multiple recipe tables into one
+-- @param recipeTables table Array of recipe tables to merge
+-- @return table Merged recipe table
+local function mergeRecipes(recipeTables)
+    local merged = {}
+    
+    for _, recipeTable in ipairs(recipeTables) do
+        for itemName, recipe in pairs(recipeTable) do
+            if merged[itemName] then
+                -- Duplicate - keep first one found
+                if debugMode then
+                    print("[DEBUG] Duplicate recipe for " .. itemName .. " - keeping first")
+                end
+            else
+                merged[itemName] = recipe
+            end
+        end
+    end
+    
+    return merged
+end
+
+--- Load recipe data from file(s)
 -- @return table|nil The recipe data table, or nil on error
 local function loadRecipeData()
     if recipeData then
         return recipeData
     end
     
-    if not fs.exists(recipeDataPath) then
-        print("[WARN] Recipe data file not found: " .. recipeDataPath)
+    recipeDataLoadedFrom = {}
+    
+    -- Try loading part files first (multi-disk setup)
+    local parts = findRecipePartFiles()
+    if #parts > 0 then
+        print(string.format("[INFO] Found %d recipe part files", #parts))
+        
+        local recipeTables = {}
+        local totalLoaded = 0
+        
+        for _, part in ipairs(parts) do
+            print(string.format("[INFO] Loading part %d: %s", part.partNum, part.path))
+            
+            local success, data = pcall(dofile, part.path)
+            if success and type(data) == "table" then
+                table.insert(recipeTables, data)
+                table.insert(recipeDataLoadedFrom, part.path)
+                totalLoaded = totalLoaded + 1
+            else
+                print("[WARN] Failed to load " .. part.path .. ": " .. tostring(data))
+            end
+        end
+        
+        if totalLoaded > 0 then
+            print(string.format("[INFO] Loaded %d of %d parts, merging...", totalLoaded, #parts))
+            recipeData = mergeRecipes(recipeTables)
+            return recipeData
+        else
+            print("[WARN] No recipe parts could be loaded")
+        end
+    end
+    
+    -- Fall back to single file mode
+    local path = findRecipeDataFile()
+    if not path then
+        print("[WARN] Recipe data file not found in any search path")
+        print("[INFO] Searched locations:")
+        for _, p in ipairs(RECIPE_DATA_PATHS) do
+            print("  - " .. p)
+        end
+        print("[INFO] Also searched for multi-part files:")
+        print("  - disk/recipe_data_part1.lua, part2.lua, etc.")
+        print("  - disk2/recipe_data_part1.lua, part2.lua, etc.")
+        print("[INFO] Place recipe files on floppy disks (see README)")
         return nil
     end
     
-    local success, data = pcall(dofile, recipeDataPath)
+    print("[INFO] Loading recipes from: " .. path)
+    
+    local success, data = pcall(dofile, path)
     if not success then
         print("[ERROR] Failed to load recipe data: " .. tostring(data))
         return nil
     end
     
     recipeData = data
+    table.insert(recipeDataLoadedFrom, path)
     return recipeData
 end
 
@@ -342,7 +493,46 @@ end
 --- Force reload of recipe data
 function recipes.reload()
     recipeData = nil
+    recipeDataLoadedFrom = {}
     return loadRecipeData() ~= nil
+end
+
+--- Get the path(s) where recipes were loaded from
+-- @return table|nil Array of paths, or nil if not loaded
+function recipes.getLoadedPath()
+    if not recipeData then
+        loadRecipeData()
+    end
+    if #recipeDataLoadedFrom == 0 then
+        return nil
+    elseif #recipeDataLoadedFrom == 1 then
+        return recipeDataLoadedFrom[1]  -- Single string for backward compat
+    else
+        return recipeDataLoadedFrom  -- Array for multi-part
+    end
+end
+
+--- Get number of loaded parts
+-- @return number Number of recipe file parts loaded
+function recipes.getLoadedPartCount()
+    return #recipeDataLoadedFrom
+end
+
+--- Get all search paths for recipe data
+-- @return table Array of search paths
+function recipes.getSearchPaths()
+    return RECIPE_DATA_PATHS
+end
+
+--- Add a custom search path for recipe data
+-- @param path string The path to add
+-- @param priority boolean|nil If true, add to front of search list
+function recipes.addSearchPath(path, priority)
+    if priority then
+        table.insert(RECIPE_DATA_PATHS, 1, path)
+    else
+        table.insert(RECIPE_DATA_PATHS, path)
+    end
 end
 
 --- Get recipe statistics
@@ -352,6 +542,8 @@ function recipes.getStats()
     if not data then
         return {
             loaded = false,
+            loadedFrom = nil,
+            parts = 0,
             total = 0,
             shaped2x2 = 0,
             shaped3x3 = 0,
@@ -359,8 +551,17 @@ function recipes.getStats()
         }
     end
     
+    local loadedFrom = nil
+    if #recipeDataLoadedFrom == 1 then
+        loadedFrom = recipeDataLoadedFrom[1]
+    elseif #recipeDataLoadedFrom > 1 then
+        loadedFrom = string.format("%d part files", #recipeDataLoadedFrom)
+    end
+    
     local stats = {
         loaded = true,
+        loadedFrom = loadedFrom,
+        parts = #recipeDataLoadedFrom,
         total = 0,
         shaped2x2 = 0,
         shaped2x3 = 0,

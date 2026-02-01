@@ -45,6 +45,56 @@ updater
 
 Download all files from the `autoCrafter/` directory and the required lib modules.
 
+### Recipe Database Setup (Required)
+
+The recipe database file (`recipe_data.lua`) is approximately **5MB** and cannot fit on a standard ComputerCraft computer (1MB limit). You must place it on a **floppy disk**.
+
+#### Setup Steps:
+
+1. **Craft a Floppy Disk and Disk Drive**
+   - Disk Drive: 7 stone + 1 redstone
+   - Floppy Disk: 1 redstone + 1 paper
+
+2. **Place the Disk Drive** next to the computer running autoCrafter
+
+3. **Insert the Floppy Disk** (it will mount at `/disk`)
+
+4. **Download the Recipe Data** to the floppy disk:
+   ```
+   wget https://raw.githubusercontent.com/respiteJetfire/ccs/main/lib/data/recipe_data.lua /disk/recipe_data.lua
+   ```
+   
+   Or if you have the file locally, copy it:
+   ```
+   copy lib/data/recipe_data.lua /disk/recipe_data.lua
+   ```
+
+5. **Verify Installation**:
+   ```
+   ls /disk
+   ```
+   Should show `recipe_data.lua`
+
+6. **Restart the autoCrafter script** - it will automatically detect the recipes
+
+#### Supported Recipe Data Locations
+
+The system searches for recipe data in these locations (in order):
+
+1. `lib/data/recipe_data.lua` - Standard lib location (if space permits)
+2. `disk/recipe_data.lua` - Primary floppy disk (**recommended**)
+3. `disk/recipes/recipe_data.lua` - Floppy disk subfolder
+4. `disk/lib/data/recipe_data.lua` - Mirrored lib structure on disk
+5. `disk2/recipe_data.lua`, `disk3/recipe_data.lua` - Additional disk drives
+
+#### Using Multiple Disk Drives
+
+If you have other scripts using `/disk`, you can use a second disk drive which will mount at `/disk2`:
+
+```
+wget https://raw.githubusercontent.com/respiteJetfire/ccs/main/lib/data/recipe_data.lua /disk2/recipe_data.lua
+```
+
 ## Configuration
 
 On first run, a configuration wizard will guide you through setup. Run with `--wizard` to reconfigure:

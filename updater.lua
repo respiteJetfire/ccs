@@ -134,6 +134,262 @@ local function downloadWithCompare(remotePath, localPath)
     return "updated", nil
 end
 
+--- Find all mounted disk drives
+-- @return table Array of disk mount paths
+local function findDiskDrives()
+    local disks = {}
+    
+    -- Check for /disk
+    if fs.exists("/disk") and fs.isDir("/disk") then
+        table.insert(disks, "/disk")
+    end
+    
+    -- Check for /disk2 through /disk20
+    for i = 2, 20 do
+        local diskPath = "/disk" .. i
+        if fs.exists(diskPath) and fs.isDir(diskPath) then
+            table.insert(disks, diskPath)
+        end
+    end
+    
+    return disks
+end
+
+--- Wait for a disk to be inserted in any drive
+-- @param diskNumber number The disk number being requested
+-- @return string|nil The disk path or nil if cancelled
+local function waitForDisk(diskNumber)
+    print("")
+    print("[DISK] Insert Disk #" .. diskNumber .. " and press any key...")
+    print("[DISK] (or press Q to skip floppy setup)")
+    
+    while true do
+        local event, key = os.pullEvent("key")
+        
+        -- Check for quit
+        if key == keys.q then
+            return nil
+        end
+        
+        -- Check if a disk is now available
+        local disks = findDiskDrives()
+        if #disks > 0 then
+            -- Find the first empty disk or create /disk path
+            for _, diskPath in ipairs(disks) do
+                return diskPath
+            end
+        else
+            print("[DISK] No disk detected. Please insert a disk and try again.")
+        end
+    end
+end
+
+--- Copy file to floppy disk
+-- @param remotePath string Remote path in repo
+-- @param targetPath string Target mount point (e.g., "/disk" or "/")
+-- @param relPath string Relative path with directories (e.g., "lib/data/recipes/part1.lua")
+-- @return boolean, string Success status and error message if failed
+local function copyToFloppy(remotePath, targetPath, relPath)
+    -- Download to temporary location first
+    local tempPath = ".temp_floppy_download"
+    
+    local success, err = downloadFile(remotePath, tempPath)
+    if not success then
+        if fs.exists(tempPath) then
+            fs.delete(tempPath)
+        end
+        return false, err
+    end
+    
+    -- Build full destination path
+    local destPath = fs.combine(targetPath, relPath)
+    
+    -- Create directory structure on target
+    local dir = destPath:match("(.+)/[^/]+$")
+    if dir and dir ~= "" and not fs.exists(dir) then
+        fs.makeDir(dir)
+    end
+    
+    -- Remove existing file if present
+    if fs.exists(destPath) then
+        fs.delete(destPath)
+    end
+    
+    -- Move to destination
+    fs.copy(tempPath, destPath)
+    fs.delete(tempPath)
+    
+    -- Verify
+    if not fs.exists(destPath) then
+        return false, "Copy verification failed"
+    end
+    
+    return true, nil
+end
+
+--- Get file size from downloaded content
+-- @param remotePath string Remote path in repo
+-- @return number|nil File size in bytes, or nil on error
+local function getRemoteFileSize(remotePath)
+    local tempPath = ".temp_size_check"
+    local success, err = downloadFile(remotePath, tempPath)
+    if not success then
+        return nil
+    end
+    
+    local size = fs.getSize(tempPath)
+    fs.delete(tempPath)
+    return size
+end
+
+--- Find best location for a file (root first, then disks)
+-- @param fileSize number Size of file in bytes
+-- @param usedSpace table Map of path -> bytes used
+-- @return string|nil Path to use, or nil if needs new disk
+local function findBestLocation(fileSize, usedSpace)
+    -- Try root first (highest priority)
+    local rootFree = fs.getFreeSpace("/")
+    local rootUsed = usedSpace["/"] or 0
+    local rootAvailable = rootFree - rootUsed
+    
+    if rootAvailable >= fileSize + 10000 then  -- 10KB buffer
+        return "/"
+    end
+    
+    -- Try existing mounted disks
+    local disks = findDiskDrives()
+    for _, diskPath in ipairs(disks) do
+        if fs.exists(diskPath) then
+            local diskFree = fs.getFreeSpace(diskPath)
+            local diskUsed = usedSpace[diskPath] or 0
+            local diskAvailable = diskFree - diskUsed
+            
+            if diskAvailable >= fileSize + 5000 then  -- 5KB buffer
+                return diskPath
+            end
+        end
+    end
+    
+    return nil  -- Need to insert new disk
+end
+
+--- Handle floppy disk file installation with dynamic space management
+-- @param floppyFiles table Array of remote file paths
+-- @return boolean, table Success status and results
+local function installFloppyFiles(floppyFiles)
+    if not floppyFiles or #floppyFiles == 0 then
+        return true, {copied = 0, skipped = 0, failed = 0}
+    end
+    
+    print("")
+    print(string.rep("=", 50))
+    print("LARGE FILE SETUP")
+    print(string.rep("=", 50))
+    print("")
+    print("Checking space for " .. #floppyFiles .. " large data file(s)...")
+    
+    -- Check root capacity
+    local rootCapacity = fs.getCapacity("/")
+    local rootFree = fs.getFreeSpace("/")
+    print(string.format("[INFO] Root: %d KB free / %d KB total", 
+        math.floor(rootFree / 1024), math.floor(rootCapacity / 1024)))
+    
+    local results = {
+        copied = 0,
+        skipped = 0,
+        failed = 0,
+        errors = {},
+        locations = {}
+    }
+    
+    local usedSpace = {}  -- Track planned space usage
+    local diskNumber = 0
+    
+    for i, remotePath in ipairs(floppyFiles) do
+        local filename = remotePath:match("[^/]+$")
+        local relPath = "lib/" .. remotePath  -- Files go in lib/ directory
+        
+        -- Check if already exists
+        if fs.exists(relPath) then
+            print(string.format("[SKIP] %s (already exists)", filename))
+            results.skipped = results.skipped + 1
+            goto continue
+        end
+        
+        print(string.format("[%d/%d] Processing: %s", i, #floppyFiles, filename))
+        
+        -- Get file size
+        print("  [....] Checking file size...")
+        local fileSize = getRemoteFileSize(remotePath)
+        if not fileSize then
+            print("  [FAIL] Could not determine file size")
+            results.failed = results.failed + 1
+            table.insert(results.errors, {file = filename, error = "Size check failed"})
+            goto continue
+        end
+        
+        print(string.format("  [INFO] Size: %d KB", math.floor(fileSize / 1024)))
+        
+        -- Find best location
+        local targetPath = findBestLocation(fileSize, usedSpace)
+        
+        -- If no space, request a disk
+        while not targetPath do
+            diskNumber = diskNumber + 1
+            print(string.format("  [DISK] Need disk #%d for remaining files", diskNumber))
+            targetPath = waitForDisk(diskNumber)
+            
+            if not targetPath then
+                print("  [SKIP] Skipping remaining files")
+                print("  [INFO] You can manually copy files from the repository later")
+                return results.failed == 0, results
+            end
+            
+            -- Verify disk has space
+            local diskFree = fs.getFreeSpace(targetPath)
+            if diskFree < fileSize + 5000 then
+                print(string.format("  [WARN] Disk only has %d KB free, need %d KB", 
+                    math.floor(diskFree / 1024), math.floor(fileSize / 1024)))
+                targetPath = nil  -- Try again with next disk
+            end
+        end
+        
+        -- Download and copy file
+        local destPath = fs.combine(targetPath, relPath)
+        local success, err = copyToFloppy(remotePath, targetPath, relPath)
+        
+        if success then
+            local locationName = targetPath == "/" and "root" or targetPath
+            print(string.format("  [OK]   Copied to %s (%s)", locationName, destPath))
+            results.copied = results.copied + 1
+            results.locations[filename] = locationName
+            
+            -- Track space usage
+            usedSpace[targetPath] = (usedSpace[targetPath] or 0) + fileSize
+        else
+            print("  [FAIL] " .. tostring(err))
+            results.failed = results.failed + 1
+            table.insert(results.errors, {file = filename, error = err})
+        end
+        
+        ::continue::
+    end
+    
+    print("")
+    print("[INFO] Large file setup complete!")
+    print(string.format("[INFO] %d files copied, %d skipped, %d failed", 
+        results.copied, results.skipped, results.failed))
+    
+    if next(results.locations) then
+        print("[INFO] File locations:")
+        for file, location in pairs(results.locations) do
+            print("  " .. file .. " -> " .. location)
+        end
+    end
+    
+    return results.failed == 0, results
+end
+
 --------------------------------------------------------------------------------
 -- Manifest System
 --------------------------------------------------------------------------------
@@ -157,8 +413,25 @@ local SCRIPT_MANIFESTS = {
             "config/manager.lua",
             "config/wizard.lua",
             "data/recipes.lua",
-            "data/recipe_data.lua",
-        }
+            -- NOTE: Recipe part files are NOT auto-downloaded due to size
+            -- Recipe data split across 9 floppy disks (~460KB each)
+            -- See autoCrafter/README.md for multi-disk setup instructions
+        },
+        -- Large files that must go on floppy disks (not auto-downloaded)
+        floppyFiles = {
+            "data/recipes/recipe_data_part1.lua",  -- ~460KB - Disk 1
+            "data/recipes/recipe_data_part2.lua",  -- ~460KB - Disk 2
+            "data/recipes/recipe_data_part3.lua",  -- ~460KB - Disk 3
+            "data/recipes/recipe_data_part4.lua",  -- ~460KB - Disk 4
+            "data/recipes/recipe_data_part5.lua",  -- ~460KB - Disk 5
+            "data/recipes/recipe_data_part6.lua",  -- ~460KB - Disk 6
+            "data/recipes/recipe_data_part7.lua",  -- ~460KB - Disk 7
+            "data/recipes/recipe_data_part8.lua",  -- ~460KB - Disk 8
+            "data/recipes/recipe_data_part9.lua",  -- ~127KB - Disk 9
+        },
+        setupNotes = [[Recipe data split across 9 floppy disks (~5MB total).
+Copy each part to separate disks: part1 to /disk/, part2 to /disk2/, etc.
+Files will auto-load and merge at runtime. See README for details.]],
     },
     
     ["colonyManager"] = {
@@ -615,7 +888,17 @@ local function updateScript(scriptName, variant)
         results.failed = results.failed + 1
     end
     
+    -- Handle floppy disk files if present
+    if manifest.floppyFiles and #manifest.floppyFiles > 0 then
+        local floppySuccess, floppyResults = installFloppyFiles(manifest.floppyFiles)
+        if not floppySuccess then
+            print("[WARN] Some floppy files failed to copy")
+            results.failed = results.failed + floppyResults.failed
+        end
+    end
+    
     -- Note about self-update
+    print("")
     print("[INFO] Note: To update the central updater itself, run: updater --self-update")
     
     -- Save script configuration for startup
