@@ -144,7 +144,7 @@ local SCRIPT_MANIFESTS = {
     ["colonyManager"] = {
         name = "Colony Manager",
         description = "MineColonies work request monitoring",
-        version = "0.3.1",
+        version = "0.3.2",
         mainScript = "colonyManager/manager.lua",
         files = {
             "colonyManager/manager.lua",
@@ -371,7 +371,7 @@ local SCRIPT_MANIFESTS = {
     ["invRequest/manager"] = {
         name = "Inventory Request Manager",
         description = "EMC interface request handler",
-        version = "1.0.4",
+        version = "1.0.5",
         mainScript = "invRequest/manager/manager.lua",
         files = {
             "invRequest/manager/manager.lua",

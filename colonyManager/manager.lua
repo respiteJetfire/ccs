@@ -2,9 +2,9 @@
 -- Uses MineColonies colony peripheral for ComputerCraft 1.20.1
 -- Dependencies: lib.peripherals.modem, lib.peripherals.colony, lib.data.tracking,
 --               lib.network.rednet, lib.network.protocol
-local version = "0.3.1"
+local version = "0.3.2"
 local PASSWORD = "apple"
-local CHECK_INTERVAL = 10  -- seconds between checks
+local CHECK_INTERVAL = 3  -- seconds between checks
 
 -- Load shared library
 local lib = dofile("lib/init.lua")

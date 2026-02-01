@@ -13,7 +13,7 @@
     @author CCScripts
 ]]
 
-local version = "1.0.4"
+local version = "1.0.5"
 local PASSWORD = "apple"
 
 -- Load shared library
@@ -190,7 +190,7 @@ while true do
         local password, command = message:match("^(%S+)%s+(.+)$")
         
         if not password or password ~= PASSWORD then
-            print("[AUTH] Invalid password. Ignoring message.")
+            -- Do nothing for invalid password
         elseif command == "info" then
             processInfoRequest(senderId)
         else
@@ -206,7 +206,7 @@ while true do
             end
         end
     else
-        print("[ERROR] Unrecognized message format")
+        -- print("[ERROR] Unrecognized message format")
     end
     
     print("")
