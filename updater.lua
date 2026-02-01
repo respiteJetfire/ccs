@@ -141,6 +141,26 @@ end
 --- Available scripts and their manifests
 -- Each script defines its files and library dependencies
 local SCRIPT_MANIFESTS = {
+    ["autoCrafter"] = {
+        name = "Auto Crafter",
+        description = "Automated crafting using Advanced Peripherals crafter",
+        version = "2.0.0",
+        mainScript = "autoCrafter/manager.lua",
+        files = {
+            "autoCrafter/manager.lua",
+        },
+        libDeps = {
+            "init.lua",
+            "peripherals/modem.lua",
+            "peripherals/emc.lua",
+            "network/rednet.lua",
+            "config/manager.lua",
+            "config/wizard.lua",
+            "data/recipes.lua",
+            "data/recipe_data.lua",
+        }
+    },
+    
     ["colonyManager"] = {
         name = "Colony Manager",
         description = "MineColonies work request monitoring",

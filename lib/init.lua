@@ -83,6 +83,7 @@ local modulePaths = {
     ["data.stale"] = "data/stale.lua",
     ["data.tracking"] = "data/tracking.lua",
     ["data.cache"] = "data/cache.lua",
+    ["data.recipes"] = "data/recipes.lua",
     
     -- Update
     ["update.updater"] = "update/updater.lua",
