@@ -406,7 +406,7 @@ local SCRIPT_MANIFESTS = {
     ["weatherSystem/master"] = {
         name = "Weather System Master",
         description = "Weather data aggregation and forecasting server",
-        version = "1.0.0",
+        version = "1.0.1",
         mainScript = "weatherSystem/master/master.lua",
         files = {
             "weatherSystem/master/master.lua",

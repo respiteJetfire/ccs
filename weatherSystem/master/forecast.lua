@@ -3,11 +3,18 @@
 -- 120-day deterministic forecast with realistic weather patterns
 -- Storm systems, fronts, and biome-specific conditions
 --
+-- IMPORTANT: How weather works in this system:
+-- 1. Weather patterns are GLOBAL and deterministic (same for all dimensions)
+-- 2. Each hour has a pre-generated weather state (isRaining, isThundering)
+-- 3. The rainChance% is a FORECAST (how likely it seemed), but actual weather is deterministic
+-- 4. All stations display the same global weather, converted for their biome (rain = snow in cold biomes)
+-- 5. The master FORCES weather using commands to match the global pattern
+--
 -- Note: This is a domain-specific module that contains weather forecasting logic.
 -- It does not depend on the shared lib as it handles weather-specific calculations.
 -- The forecast data structures are consumed by the master.lua controller.
 
-local version = "6.1.1"
+local version = "6.1.2"
 
 local forecast = {}
 
@@ -545,10 +552,10 @@ function forecast.computeWeather(currentTick, gameDay)
     globalWeatherState.lastForecastHour = currentHour
     globalWeatherState.lastForecastDay = gameDay
     
-    -- Get weather from pattern
+    -- Get weather from pattern (this is the GLOBAL weather - same for all stations)
     local weather = getWeatherFromPattern(gameDay, currentHour)
     
-    -- Calculate duration
+    -- Calculate duration (how long this weather state will persist)
     local durationHours = 1
     for i = 1, 12 do
         local futureHour = (currentHour + i) % 24
@@ -562,6 +569,8 @@ function forecast.computeWeather(currentTick, gameDay)
     end
     local duration = durationHours * 1000
     
+    -- Use pattern's isRaining/isThundering as authoritative global weather
+    -- The rainChance% is just the forecast probability, actual weather is deterministic
     local desiredRain = weather.isRaining
     local desiredThunder = weather.isThundering
     local changed = (desiredRain ~= globalWeatherState.isRaining) or (desiredThunder ~= globalWeatherState.isThundering)
@@ -570,6 +579,8 @@ function forecast.computeWeather(currentTick, gameDay)
     globalWeatherState.isRaining = desiredRain
     globalWeatherState.isThundering = desiredThunder
     globalWeatherState.plannedDuration = duration
+
+    print("[FORECAST] Global weather: " .. mode .. " (chance was " .. weather.rainChance .. "%, actual: " .. tostring(weather.isRaining) .. ")")
 
     return {
         changed = changed,
@@ -631,6 +642,8 @@ function forecast.generate(stationsData)
     -- Pre-generate weather pattern
     generate120DayPattern(gameDay)
     
+    print("[FORECAST] Generating forecasts for " .. tostring(#(function() local c=0 for _ in pairs(registeredStations) do c=c+1 end return c end)()) .. " stations")
+    
     -- Generate per-station forecasts
     local stationForecasts = {}
     local stationList = {}
@@ -638,13 +651,19 @@ function forecast.generate(stationsData)
     for stationId, station in pairs(registeredStations) do
         -- Use string keys for consistent lookup on station side
         local strId = tostring(stationId)
+        local hourlyForecast = forecast.generate24Hour(stationId, gameDay, currentHour)
+        local fiveDayForecast = forecast.generate5Day(stationId, gameDay)
+        
         stationForecasts[strId] = {
-            hourly = forecast.generate24Hour(stationId, gameDay, currentHour),
-            fiveDay = forecast.generate5Day(stationId, gameDay),
+            hourly = hourlyForecast,
+            fiveDay = fiveDayForecast,
             stationName = station.name,
             biome = station.biome,
             dimension = station.dimension
         }
+        
+        print("[FORECAST] Station " .. strId .. ": " .. #hourlyForecast .. " hourly, " .. #fiveDayForecast .. " daily forecasts")
+        
         table.insert(stationList, {
             id = stationId,
             name = station.name,

@@ -3,6 +3,11 @@
 -- Master controls ALL forecasting - stations just register biome/position and display
 -- Global weather with biome-specific display (rain = snow in cold biomes)
 --
+-- IMPORTANT: Weather is GLOBAL and deterministic across all stations
+-- - Pattern is generated for 120-day cycles (same every 120 days)
+-- - All stations see the same weather, just displayed differently per biome
+-- - rainChance% is the forecast probability, but actual weather is pre-determined
+--
 -- Dependencies: lib (shared library)
 --   - lib.peripherals.modem: Wireless modem discovery and rednet management
 --   - lib.peripherals.environment: Environment detector discovery
@@ -12,7 +17,7 @@
 --   - lib.data.tracking: Station tracking with staleness
 --   - lib.format.time: Minecraft time formatting
 
-local version = "5.3.2"
+local version = "5.3.3"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -214,6 +219,15 @@ function sendForecastToStation(computerId, stationId)
         end
     end
     
+    -- Ensure we always have valid forecast arrays
+    local hourlyData = (stationForecast and stationForecast.hourly) or {}
+    local fiveDayData = (stationForecast and stationForecast.fiveDay) or {}
+    
+    -- If no station-specific forecast exists, log warning
+    if not stationForecast or #hourlyData == 0 or #fiveDayData == 0 then
+        print("[WARN] Missing forecast data for station " .. strId)
+    end
+    
     -- Build response packet with ALL data the station needs
     local response = {
         type = "forecast_response",
@@ -227,8 +241,8 @@ function sendForecastToStation(computerId, stationId)
         current = currentForecast.current,
         summary = currentForecast.summary,
         -- Station-specific forecasts for this station
-        hourly = stationForecast and stationForecast.hourly or {},
-        fiveDay = stationForecast and stationForecast.fiveDay or {},
+        hourly = hourlyData,
+        fiveDay = fiveDayData,
         -- Full data for overview/cycling
         stations = stationList,
         stationForecasts = currentForecast.stationForecasts or {},
