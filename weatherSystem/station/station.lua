@@ -3,7 +3,7 @@
 -- Master handles all forecasting - station registers and displays
 -- Dependencies: lib (peripherals.modem, peripherals.monitor, peripherals.environment,
 --               network.rednet, network.protocol, data.stale)
-local version = "8.2.1"
+local version = "8.2.2"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -191,7 +191,13 @@ end
 
 -- Process received forecast
 local function processForecast(data)
+    print("[DEBUG] processForecast called, type: " .. tostring(data and data.type or "nil"))
+    
     if data.type == "forecast_response" or data.type == "forecast_broadcast" then
+        print("[DEBUG] Processing forecast data...")
+        print("[DEBUG] Hourly data length: " .. tostring(data.hourly and #data.hourly or "nil"))
+        print("[DEBUG] FiveDay data length: " .. tostring(data.fiveDay and #data.fiveDay or "nil"))
+        
         currentForecast = {
             generatedAt = data.generatedAt,
             gameTime = data.gameTime,
@@ -208,6 +214,8 @@ local function processForecast(data)
             stationMobs = data.stationMobs or {}
         }
         
+        print("[DEBUG] Forecast stored: hourly=" .. #currentForecast.hourly .. ", fiveDay=" .. #currentForecast.fiveDay)
+        
         -- Update station list
         if data.stations and #data.stations > 0 then
             allStations = data.stations
@@ -215,6 +223,7 @@ local function processForecast(data)
         
         return true
     end
+    print("[DEBUG] Forecast not processed, unexpected type")
     return false
 end
 
@@ -385,6 +394,7 @@ local function receiveLoop()
     while true do
         local senderId, message, protocol, err = lib.network.rednet.receive(nil, 10)
         if senderId and message then
+            print("[DEBUG] Received message from " .. senderId .. ", type: " .. tostring(type(message)))
             local packet = message
             -- lib.network.rednet.receive auto-deserializes tables
             if type(message) == "string" then
@@ -392,9 +402,12 @@ local function receiveLoop()
             end
             
             if type(packet) == "table" then
+                print("[DEBUG] Message is table, calling processForecast")
                 if processForecast(packet) then
                     print("[RECV] Forecast received")
                 end
+            else
+                print("[WARN] Received non-table message")
             end
         end
         
