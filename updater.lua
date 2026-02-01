@@ -371,7 +371,7 @@ local SCRIPT_MANIFESTS = {
     ["invRequest/manager"] = {
         name = "Inventory Request Manager",
         description = "EMC interface request handler",
-        version = "1.0.0",
+        version = "1.0.1",
         mainScript = "invRequest/manager/manager.lua",
         files = {
             "invRequest/manager/manager.lua",
