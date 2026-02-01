@@ -13,7 +13,7 @@
     @author CCScripts
 ]]
 
-local version = "1.0.2"
+local version = "1.0.3"
 local PASSWORD = "apple"
 
 -- Load shared library
@@ -57,9 +57,26 @@ print("[INFO] Chest found and wrapped")
 local function findItemSlot(itemName)
     local inventory = emcInterface.list()
     
+    -- Debug: print all available items
+    print("[DEBUG] Searching for: " .. itemName)
+    print("[DEBUG] Available items:")
+    for slot, item in pairs(inventory) do
+        print("  Slot " .. slot .. ": " .. item.name .. " x" .. item.count)
+    end
+    
+    -- First try exact match
     for slot, item in pairs(inventory) do
         if item.name == itemName then
-            print("[INFO] Found " .. itemName .. " in slot " .. slot .. " (count: " .. item.count .. ")")
+            print("[INFO] Found exact match in slot " .. slot)
+            return slot
+        end
+    end
+    
+    -- Try case-insensitive partial match (e.g., "book" matches "minecraft:book")
+    local searchLower = itemName:lower()
+    for slot, item in pairs(inventory) do
+        if item.name:lower():find(searchLower, 1, true) then
+            print("[INFO] Found partial match: " .. item.name .. " in slot " .. slot)
             return slot
         end
     end
@@ -149,13 +166,19 @@ while true do
     local senderId, message = lib.network.rednet.receive()
     
     print("[RECV] From " .. tostring(senderId))
+    print("[DEBUG] Message type: " .. type(message))
     
     -- Handle protocol message structure (from colonyManager)
     if type(message) == "table" and message.data then
+        print("[DEBUG] Protocol message detected")
         local data = message.data
         local password = data.password
         local itemId = data.itemId
         local quantity = data.quantity
+        
+        print("[DEBUG] Password: " .. tostring(password))
+        print("[DEBUG] ItemId: " .. tostring(itemId))
+        print("[DEBUG] Quantity: " .. tostring(quantity))
         
         if not password or password ~= PASSWORD then
             print("[AUTH] Invalid password. Ignoring message.")
