@@ -368,6 +368,21 @@ local SCRIPT_MANIFESTS = {
         }
     },
     
+    ["invRequest/manager"] = {
+        name = "Inventory Request Manager",
+        description = "EMC interface request handler",
+        version = "1.0.0",
+        mainScript = "invRequest/manager/manager.lua",
+        files = {
+            "invRequest/manager/manager.lua",
+        },
+        libDeps = {
+            "init.lua",
+            "peripherals/modem.lua",
+            "network/rednet.lua",
+        }
+    },
+    
     ["mffsDefense"] = {
         name = "MFFS Defense",
         description = "Automated MFFS force field control",
