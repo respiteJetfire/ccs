@@ -17,7 +17,7 @@
 --   - lib.data.tracking: Station tracking with staleness
 --   - lib.format.time: Minecraft time formatting
 
-local version = "5.3.7"
+local version = "5.3.8"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -62,6 +62,7 @@ local currentForecast = nil
 -- Forward declarations
 local updateForecast
 local sendForecastToStation
+local broadcastForecast
 
 -- Initialize network using lib.peripherals.modem
 print("[INFO] Searching for wireless modem...")
@@ -330,8 +331,7 @@ updateForecast = function()
 end
 
 -- Broadcast forecast to all stations
--- Forward declaration needed since this is called before definition
-local function broadcastForecast()
+broadcastForecast = function()
     if not currentForecast then 
         print("[WARN] No currentForecast to broadcast")
         return 
