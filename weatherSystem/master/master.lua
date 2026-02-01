@@ -17,7 +17,7 @@
 --   - lib.data.tracking: Station tracking with staleness
 --   - lib.format.time: Minecraft time formatting
 
-local version = "5.3.6"
+local version = "5.3.7"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -158,10 +158,10 @@ local function processStationPacket(senderId, packet)
         print("[INFO] Regenerating forecast for new station...")
         updateForecast()
         
-        -- Send immediate forecast response
-        if currentForecast then
-            sendForecastToStation(senderId, stationId)
-        end
+        -- Broadcast to all stations (not just this one)
+        print("[INFO] Broadcasting updated forecast to all stations...")
+        broadcastForecast()
+        
         return true
         
     elseif packetType == "station_heartbeat" then
@@ -205,6 +205,10 @@ local function processStationPacket(senderId, packet)
             -- Force forecast regeneration with new station
             print("[INFO] Regenerating forecast for newly registered station...")
             updateForecast()
+            
+            -- Broadcast to all stations
+            print("[INFO] Broadcasting updated forecast to all stations...")
+            broadcastForecast()
         end
         return true
         
@@ -326,11 +330,18 @@ updateForecast = function()
 end
 
 -- Broadcast forecast to all stations
+-- Forward declaration needed since this is called before definition
 local function broadcastForecast()
-    if not currentForecast then return end
+    if not currentForecast then 
+        print("[WARN] No currentForecast to broadcast")
+        return 
+    end
     
     local activeStations = getActiveStations()
-    if #activeStations == 0 then return end
+    if #activeStations == 0 then 
+        print("[WARN] No active stations to broadcast to")
+        return 
+    end
     
     -- Broadcast to all stations
     for _, station in ipairs(activeStations) do
