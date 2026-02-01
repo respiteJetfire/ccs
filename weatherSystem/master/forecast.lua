@@ -14,7 +14,7 @@
 -- It does not depend on the shared lib as it handles weather-specific calculations.
 -- The forecast data structures are consumed by the master.lua controller.
 
-local version = "6.1.3"
+local version = "6.1.4"
 
 local forecast = {}
 
@@ -198,9 +198,9 @@ local function generate120DayPattern(startDay)
         local systemLength = seededRandom(systemSeed, 3, 7)
         local systemPhase = (day % systemLength) / systemLength
         
-        -- Determine if a storm front is passing
+        -- Determine if a storm front is passing (reduced frequency)
         local frontSeed = getSeed(actualDay, 0, "front")
-        local frontChance = 0.15 * getSeasonalStormMod(actualDay)
+        local frontChance = 0.10 * getSeasonalStormMod(actualDay)  -- Reduced from 0.15 to 0.10
         
         if stormActive then
             stormDuration = stormDuration - 1
@@ -221,13 +221,13 @@ local function generate120DayPattern(startDay)
         for hour = 0, 23 do
             local hourSeed = getSeed(actualDay, hour, "hourly")
             
-            -- Base rain chance from season and storm activity
-            local baseRainChance = 15
+            -- Base rain chance from season and storm activity (reduced for more clear days)
+            local baseRainChance = 10
             if stormActive then
-                baseRainChance = 70 + seededRandom(hourSeed, 0, 20)
+                baseRainChance = 50 + seededRandom(hourSeed, 0, 25)  -- 50-75% during storms (was 70-90%)
             elseif systemPhase > 0.3 and systemPhase < 0.7 then
                 -- Mid-system has higher chance
-                baseRainChance = 30 + seededRandom(hourSeed, 0, 20)
+                baseRainChance = 20 + seededRandom(hourSeed, 0, 15)  -- 20-35% during weather systems (was 30-50%)
             end
             
             -- Time-of-day variation (afternoon storms more common)

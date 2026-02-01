@@ -17,7 +17,7 @@
 --   - lib.data.tracking: Station tracking with staleness
 --   - lib.format.time: Minecraft time formatting
 
-local version = "5.3.4"
+local version = "5.3.5"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -150,6 +150,10 @@ local function processStationPacket(senderId, packet)
         print("      Biome: " .. stationData.biome)
         print("      Dimension: " .. stationData.dimension)
         
+        -- Force forecast regeneration with new station
+        print("[INFO] Regenerating forecast for new station...")
+        updateForecast()
+        
         -- Send immediate forecast response
         if currentForecast then
             sendForecastToStation(senderId, stationId)
@@ -193,6 +197,10 @@ local function processStationPacket(senderId, packet)
             }
             lib.data.tracking.track(stationTracker, stationId, stationData)
             forecast.registerStation(stationId, stationData)
+            
+            -- Force forecast regeneration with new station
+            print("[INFO] Regenerating forecast for newly registered station...")
+            updateForecast()
         end
         return true
         
