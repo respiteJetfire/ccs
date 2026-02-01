@@ -17,7 +17,7 @@
 --   - lib.data.tracking: Station tracking with staleness
 --   - lib.format.time: Minecraft time formatting
 
-local version = "5.3.3"
+local version = "5.3.4"
 
 -- Load shared library
 local lib = dofile("lib/init.lua")
@@ -178,6 +178,21 @@ local function processStationPacket(senderId, packet)
                 altitude = packet.altitude,
                 position = packet.position
             })
+        else
+            -- Station sent heartbeat but wasn't registered - register it now
+            print("[WARN] Heartbeat from unregistered station " .. stationId .. ", registering now")
+            local stationData = {
+                id = stationId,
+                computerId = senderId,
+                name = packet.station and packet.station.name or ("Station " .. stationId),
+                biome = packet.biome or "minecraft:plains",
+                dimension = packet.dimension or "minecraft:overworld",
+                altitude = packet.altitude or 64,
+                position = packet.position,
+                mobData = packet.mobData
+            }
+            lib.data.tracking.track(stationTracker, stationId, stationData)
+            forecast.registerStation(stationId, stationData)
         end
         return true
         
@@ -197,10 +212,26 @@ end
 -- Uses lib.network.rednet for sending
 -- Parameters: computerId (numeric computer ID), stationId (string station ID for forecast lookup)
 function sendForecastToStation(computerId, stationId)
-    if not currentForecast then return end
+    if not currentForecast then 
+        print("[ERROR] No currentForecast to send")
+        return 
+    end
     
     -- Get station-specific forecast (use string key for consistent lookup)
     local strId = tostring(stationId)
+    print("[DEBUG] Sending forecast to station " .. strId .. " (computer " .. computerId .. ")")
+    
+    -- Debug: List all available forecast keys
+    if currentForecast.stationForecasts then
+        local keys = {}
+        for k, _ in pairs(currentForecast.stationForecasts) do
+            table.insert(keys, tostring(k))
+        end
+        print("[DEBUG] Available forecast keys: " .. table.concat(keys, ", "))
+    else
+        print("[ERROR] No stationForecasts in currentForecast!")
+    end
+    
     local stationForecast = currentForecast.stationForecasts and 
                             currentForecast.stationForecasts[strId]
     
@@ -223,9 +254,15 @@ function sendForecastToStation(computerId, stationId)
     local hourlyData = (stationForecast and stationForecast.hourly) or {}
     local fiveDayData = (stationForecast and stationForecast.fiveDay) or {}
     
-    -- If no station-specific forecast exists, log warning
-    if not stationForecast or #hourlyData == 0 or #fiveDayData == 0 then
-        print("[WARN] Missing forecast data for station " .. strId)
+    -- If no station-specific forecast exists, log detailed warning
+    if not stationForecast then
+        print("[ERROR] No stationForecast object for station " .. strId)
+    elseif #hourlyData == 0 then
+        print("[ERROR] Empty hourly forecast for station " .. strId)
+    elseif #fiveDayData == 0 then
+        print("[ERROR] Empty 5-day forecast for station " .. strId)
+    else
+        print("[DEBUG] Forecast data OK: " .. #hourlyData .. " hourly, " .. #fiveDayData .. " daily")
     end
     
     -- Build response packet with ALL data the station needs
