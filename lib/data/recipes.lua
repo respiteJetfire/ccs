@@ -49,7 +49,7 @@ local RECIPE_DATA_PATHS = {
 -- Search paths for multi-part recipe data
 -- Each disk should contain one part file (recipe_data_part1.lua, etc.)
 local RECIPE_PART_PATHS = {
-    -- Disk drives
+    -- Disk drives - root level
     "disk/recipe_data_part%d.lua",
     "disk2/recipe_data_part%d.lua",
     "disk3/recipe_data_part%d.lua",
@@ -60,12 +60,34 @@ local RECIPE_PART_PATHS = {
     "disk8/recipe_data_part%d.lua",
     "disk9/recipe_data_part%d.lua",
     
-    -- Subfolder on disks
+    -- Disk drives - lib/data/recipes/ folder (matches repo structure)
+    "disk/lib/data/recipes/recipe_data_part%d.lua",
+    "disk2/lib/data/recipes/recipe_data_part%d.lua",
+    "disk3/lib/data/recipes/recipe_data_part%d.lua",
+    "disk4/lib/data/recipes/recipe_data_part%d.lua",
+    "disk5/lib/data/recipes/recipe_data_part%d.lua",
+    "disk6/lib/data/recipes/recipe_data_part%d.lua",
+    "disk7/lib/data/recipes/recipe_data_part%d.lua",
+    "disk8/lib/data/recipes/recipe_data_part%d.lua",
+    "disk9/lib/data/recipes/recipe_data_part%d.lua",
+    
+    -- Disk drives - data/recipes/ folder
+    "disk/data/recipes/recipe_data_part%d.lua",
+    "disk2/data/recipes/recipe_data_part%d.lua",
+    "disk3/data/recipes/recipe_data_part%d.lua",
+    "disk4/data/recipes/recipe_data_part%d.lua",
+    "disk5/data/recipes/recipe_data_part%d.lua",
+    "disk6/data/recipes/recipe_data_part%d.lua",
+    "disk7/data/recipes/recipe_data_part%d.lua",
+    "disk8/data/recipes/recipe_data_part%d.lua",
+    "disk9/data/recipes/recipe_data_part%d.lua",
+    
+    -- Subfolder on disks (simple)
     "disk/recipes/recipe_data_part%d.lua",
     "disk2/recipes/recipe_data_part%d.lua",
     "disk3/recipes/recipe_data_part%d.lua",
     
-    -- Lib folder (if parts are stored there)
+    -- Lib folder (if parts are stored in root lib)
     "lib/data/recipes/recipe_data_part%d.lua",
     "recipes/recipe_data_part%d.lua",
 }

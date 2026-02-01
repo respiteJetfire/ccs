@@ -190,17 +190,6 @@ end
 -- @param relPath string Relative path with directories (e.g., "lib/data/recipes/part1.lua")
 -- @return boolean, string Success status and error message if failed
 local function copyToFloppy(remotePath, targetPath, relPath)
-    -- Download to temporary location first
-    local tempPath = ".temp_floppy_download"
-    
-    local success, err = downloadFile(remotePath, tempPath)
-    if not success then
-        if fs.exists(tempPath) then
-            fs.delete(tempPath)
-        end
-        return false, err
-    end
-    
     -- Build full destination path
     local destPath = fs.combine(targetPath, relPath)
     
@@ -215,9 +204,11 @@ local function copyToFloppy(remotePath, targetPath, relPath)
         fs.delete(destPath)
     end
     
-    -- Move to destination
-    fs.copy(tempPath, destPath)
-    fs.delete(tempPath)
+    -- Download directly to destination (avoid temp file in root)
+    local success, err = downloadFile(remotePath, destPath)
+    if not success then
+        return false, err
+    end
     
     -- Verify
     if not fs.exists(destPath) then
@@ -227,19 +218,31 @@ local function copyToFloppy(remotePath, targetPath, relPath)
     return true, nil
 end
 
---- Get file size from downloaded content
+--- Get file size from HTTP headers without downloading
 -- @param remotePath string Remote path in repo
 -- @return number|nil File size in bytes, or nil on error
 local function getRemoteFileSize(remotePath)
-    local tempPath = ".temp_size_check"
-    local success, err = downloadFile(remotePath, tempPath)
-    if not success then
+    local url = REPO_BASE .. remotePath
+    
+    local response, err = http.get(url)
+    if not response then
         return nil
     end
     
-    local size = fs.getSize(tempPath)
-    fs.delete(tempPath)
-    return size
+    -- Get Content-Length header
+    local headers = response.getResponseHeaders()
+    response.close()
+    
+    if headers and headers["Content-Length"] then
+        return tonumber(headers["Content-Length"])
+    end
+    
+    -- Fallback: estimate based on file type (recipe parts are ~460KB)
+    if remotePath:match("recipe_data_part%d+%.lua") then
+        return 470000  -- Estimate 460KB
+    end
+    
+    return nil
 end
 
 --- Find best location for a file (root first, then disks)
@@ -307,7 +310,7 @@ local function installFloppyFiles(floppyFiles)
     
     for i, remotePath in ipairs(floppyFiles) do
         local filename = remotePath:match("[^/]+$")
-        local relPath = "lib/" .. remotePath  -- Files go in lib/ directory
+        local relPath = remotePath:match("lib/(.+)$") or remotePath  -- Extract path after "lib/"
         
         -- Check if already exists
         if fs.exists(relPath) then
@@ -419,15 +422,15 @@ local SCRIPT_MANIFESTS = {
         },
         -- Large files that must go on floppy disks (not auto-downloaded)
         floppyFiles = {
-            "data/recipes/recipe_data_part1.lua",  -- ~460KB - Disk 1
-            "data/recipes/recipe_data_part2.lua",  -- ~460KB - Disk 2
-            "data/recipes/recipe_data_part3.lua",  -- ~460KB - Disk 3
-            "data/recipes/recipe_data_part4.lua",  -- ~460KB - Disk 4
-            "data/recipes/recipe_data_part5.lua",  -- ~460KB - Disk 5
-            "data/recipes/recipe_data_part6.lua",  -- ~460KB - Disk 6
-            "data/recipes/recipe_data_part7.lua",  -- ~460KB - Disk 7
-            "data/recipes/recipe_data_part8.lua",  -- ~460KB - Disk 8
-            "data/recipes/recipe_data_part9.lua",  -- ~127KB - Disk 9
+            "lib/data/recipes/recipe_data_part1.lua",  -- ~460KB - Disk 1
+            "lib/data/recipes/recipe_data_part2.lua",  -- ~460KB - Disk 2
+            "lib/data/recipes/recipe_data_part3.lua",  -- ~460KB - Disk 3
+            "lib/data/recipes/recipe_data_part4.lua",  -- ~460KB - Disk 4
+            "lib/data/recipes/recipe_data_part5.lua",  -- ~460KB - Disk 5
+            "lib/data/recipes/recipe_data_part6.lua",  -- ~460KB - Disk 6
+            "lib/data/recipes/recipe_data_part7.lua",  -- ~460KB - Disk 7
+            "lib/data/recipes/recipe_data_part8.lua",  -- ~460KB - Disk 8
+            "lib/data/recipes/recipe_data_part9.lua",  -- ~127KB - Disk 9
         },
         setupNotes = [[Recipe data split across 9 floppy disks (~5MB total).
 Copy each part to separate disks: part1 to /disk/, part2 to /disk2/, etc.
