@@ -13,7 +13,7 @@
     @author CCScripts
 ]]
 
-local version = "1.0.3"
+local version = "1.0.4"
 local PASSWORD = "apple"
 
 -- Load shared library
@@ -166,23 +166,18 @@ while true do
     local senderId, message = lib.network.rednet.receive()
     
     print("[RECV] From " .. tostring(senderId))
-    print("[DEBUG] Message type: " .. type(message))
     
     -- Handle protocol message structure (from colonyManager)
     if type(message) == "table" and message.data then
-        print("[DEBUG] Protocol message detected")
         local data = message.data
         local password = data.password
         local itemId = data.itemId
         local quantity = data.quantity
         
-        print("[DEBUG] Password: " .. tostring(password))
-        print("[DEBUG] ItemId: " .. tostring(itemId))
-        print("[DEBUG] Quantity: " .. tostring(quantity))
-        
         if not password or password ~= PASSWORD then
             print("[AUTH] Invalid password. Ignoring message.")
         elseif itemId and quantity then
+            print("[DEBUG] Protocol message - ItemId: " .. tostring(itemId) .. ", Quantity: " .. tostring(quantity))
             print(string.format("[INFO] Request: %s x%d", itemId, quantity))
             processItemRequest(senderId, itemId, quantity)
         else
