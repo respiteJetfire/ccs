@@ -518,6 +518,17 @@ local function findItemsMatchingTag(tag, invIndex)
     local tagName = recipeDB.getTagName(tag)  -- Remove # prefix
     local matches = {}
     
+    -- Helper function to check if item matches a forge tag with suffix
+    local function matchesForgeSuffix(itemName, material, suffixes)
+        for _, suffix in ipairs(suffixes) do
+            if itemName == ("minecraft:" .. material .. suffix) or 
+               itemName:match(material .. suffix .. "$") then
+                return true
+            end
+        end
+        return false
+    end
+    
     -- Check all items in inventory
     for itemName, _ in pairs(invIndex) do
         local matchFound = false
@@ -525,16 +536,18 @@ local function findItemsMatchingTag(tag, invIndex)
         -- Direct pattern matching based on tag type
         if tagName == "minecraft:planks" then
             -- Match any wood planks (oak, birch, spruce, etc.)
-            matchFound = itemName:match("_planks$") or itemName == "minecraft:planks"
+            matchFound = itemName:match(":.*_planks$") or itemName == "minecraft:planks"
         elseif tagName == "minecraft:logs" then
             -- Match any logs
-            matchFound = itemName:match("_log$") or itemName == "minecraft:log"
+            matchFound = itemName:match(":.*_log$") or itemName == "minecraft:log"
         elseif tagName == "minecraft:wool" then
             -- Match any wool
-            matchFound = itemName:match("_wool$") or itemName == "minecraft:wool"
+            matchFound = itemName:match(":.*_wool$") or itemName == "minecraft:wool"
         elseif tagName == "minecraft:stone_crafting_materials" then
             -- Match cobblestone, blackstone, etc.
-            matchFound = itemName:match("cobblestone") or itemName:match("blackstone") or itemName == "minecraft:stone"
+            matchFound = itemName:match("cobblestone$") or 
+                        itemName:match("blackstone$") or 
+                        itemName == "minecraft:stone"
         elseif tagName == "minecraft:coals" then
             -- Match coal and charcoal
             matchFound = itemName == "minecraft:coal" or itemName == "minecraft:charcoal"
@@ -542,49 +555,43 @@ local function findItemsMatchingTag(tag, invIndex)
             -- Match ingots (e.g., forge:ingots/iron matches iron_ingot)
             local material = tagName:match("^forge:ingots/(.+)$")
             if material then
-                matchFound = itemName == ("minecraft:" .. material .. "_ingot") or 
-                             itemName:match(material .. "_ingot$")
+                matchFound = matchesForgeSuffix(itemName, material, {"_ingot"})
             end
         elseif tagName:match("^forge:gems/") then
             -- Match gems
             local material = tagName:match("^forge:gems/(.+)$")
             if material then
                 matchFound = itemName == ("minecraft:" .. material) or 
-                             itemName:match(material .. "$")
+                            itemName:match(material .. "$")
             end
         elseif tagName:match("^forge:dusts/") then
             -- Match dusts
             local material = tagName:match("^forge:dusts/(.+)$")
             if material then
-                matchFound = itemName == ("minecraft:" .. material) or 
-                             itemName:match(material .. "$") or
-                             itemName:match(material .. "_dust$")
+                matchFound = matchesForgeSuffix(itemName, material, {"", "_dust"})
             end
         elseif tagName:match("^forge:nuggets/") then
             -- Match nuggets
             local material = tagName:match("^forge:nuggets/(.+)$")
             if material then
-                matchFound = itemName == ("minecraft:" .. material .. "_nugget") or
-                             itemName:match(material .. "_nugget$")
+                matchFound = matchesForgeSuffix(itemName, material, {"_nugget"})
             end
         elseif tagName:match("^forge:storage_blocks/") then
             -- Match storage blocks
             local material = tagName:match("^forge:storage_blocks/(.+)$")
             if material then
-                matchFound = itemName == ("minecraft:" .. material .. "_block") or
-                             itemName:match(material .. "_block$")
+                matchFound = matchesForgeSuffix(itemName, material, {"_block"})
             end
         elseif tagName:match("^forge:plates/") then
             -- Match plates (modded items like create:iron_sheet)
             local material = tagName:match("^forge:plates/(.+)$")
             if material then
-                matchFound = itemName:match(material .. "_sheet$") or
-                             itemName:match(material .. "_plate$")
+                matchFound = matchesForgeSuffix(itemName, material, {"_sheet", "_plate"})
             end
         else
             -- For unknown tags, try generic matching
             -- Extract the last part of the tag and see if item name contains it
-            local tagPart = tagName:match(":(%w+)$") or tagName:match("/(%w+)$")
+            local tagPart = tagName:match(":([%w_-]+)$") or tagName:match("/([%w_-]+)$")
             if tagPart then
                 matchFound = itemName:match(tagPart)
             end
@@ -771,7 +778,7 @@ local function checkRecipeIngredients(itemName)
             if totalAvailable < countNeeded then
                 table.insert(missing, {
                     ingredient = ingredient,
-                    resolved = matchingItems[1] or "unknown",
+                    resolved = matchingItems[1] or ingredient,  -- Use ingredient name if no matches
                     needed = countNeeded,
                     have = totalAvailable
                 })
