@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.4.3"
+local version = "2.4.4"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -928,15 +928,30 @@ end
 
 --- Execute a craft using slot mapping
 -- @param slotMapping table Array of 9 slot numbers
+-- @param expectedItem string The item name we expect to produce
+-- @param expectedCount number The count we expect to produce
 -- @return boolean success
 -- @return string message
-local function executeCraft(slotMapping)
+-- @return number actualCount Number of items actually produced
+local function executeCraft(slotMapping, expectedItem, expectedCount)
     if #slotMapping ~= 9 then
-        return false, "Invalid slot mapping (need 9 slots)"
+        return false, "Invalid slot mapping (need 9 slots)", 0
     end
     
     if debugMode then
         print("[DEBUG] Slot mapping: " .. textutils.serialize(slotMapping))
+        print("[DEBUG] Expecting to craft: " .. expectedItem .. " x" .. expectedCount)
+    end
+    
+    -- Get output chest contents before crafting
+    local outputBefore = {}
+    if outputChest.list then
+        local beforeList = outputChest.list()
+        for slot, item in pairs(beforeList) do
+            if item.name == expectedItem then
+                outputBefore[slot] = item.count
+            end
+        end
     end
     
     -- Call the crafter
@@ -947,10 +962,43 @@ local function executeCraft(slotMapping)
     )
     
     if err then
-        return false, tostring(err)
+        return false, tostring(err), 0
     end
     
-    return success, success and "Craft successful" or "Craft failed"
+    if not success then
+        return false, "Craft failed", 0
+    end
+    
+    -- Verify output was produced
+    sleep(0.2)  -- Give time for items to transfer
+    
+    local outputAfter = {}
+    local totalProduced = 0
+    
+    if outputChest.list then
+        local afterList = outputChest.list()
+        for slot, item in pairs(afterList) do
+            if item.name == expectedItem then
+                outputAfter[slot] = item.count
+                local before = outputBefore[slot] or 0
+                totalProduced = totalProduced + (item.count - before)
+            end
+        end
+    end
+    
+    if debugMode then
+        print("[DEBUG] Items produced: " .. totalProduced .. " (expected " .. expectedCount .. ")")
+    end
+    
+    if totalProduced == 0 then
+        return false, "Craft reported success but no items were produced", 0
+    end
+    
+    if totalProduced < expectedCount then
+        return false, string.format("Only produced %d items (expected %d)", totalProduced, expectedCount), totalProduced
+    end
+    
+    return true, "Craft successful", totalProduced
 end
 
 --- Craft an item
@@ -1011,11 +1059,11 @@ local function craftItem(itemName, count)
         end
         
         -- Execute craft
-        local success, msg = executeCraft(result)
-        if success then
+        local success, msg, producedCount = executeCraft(result, itemName, outputCount)
+        if success and producedCount > 0 then
             crafted = crafted + 1
             if debugMode then
-                print("[DEBUG] Craft " .. i .. "/" .. craftsNeeded .. " successful")
+                print("[DEBUG] Craft " .. i .. "/" .. craftsNeeded .. " successful - produced " .. producedCount .. " items")
             end
         else
             return false, "Craft failed: " .. msg, crafted * outputCount
