@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.4.7"
+recipes._VERSION = "1.4.8"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -442,8 +442,11 @@ function recipes.getIngredients(itemName)
         end
     else
         -- Shaped: 2D pattern array
+        -- IMPORTANT: Iterate explicitly over columns 1-3, not using ipairs
+        -- because ipairs stops at the first nil (sparse tables)
         for _, row in ipairs(recipe.pattern or {}) do
-            for _, ing in ipairs(row) do
+            for col = 1, 3 do
+                local ing = row[col]
                 if ing and not seen[ing] then
                     seen[ing] = true
                     table.insert(ingredients, ing)
@@ -474,8 +477,11 @@ function recipes.getIngredientCounts(itemName)
             end
         end
     else
+        -- IMPORTANT: Iterate explicitly over columns 1-3, not using ipairs
+        -- because ipairs stops at the first nil (sparse tables)
         for _, row in ipairs(recipe.pattern or {}) do
-            for _, ing in ipairs(row) do
+            for col = 1, 3 do
+                local ing = row[col]
                 if ing then
                     counts[ing] = (counts[ing] or 0) + 1
                 end
