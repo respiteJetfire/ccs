@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.4.6"
+recipes._VERSION = "1.4.7"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -536,19 +536,17 @@ function recipes.toSlotArray(itemName)
     
     -- Determine pattern dimensions
     local rows = #pattern
-    local cols = 0
-    for _, row in ipairs(pattern) do
-        if #row > cols then
-            cols = #row
-        end
-    end
     
     -- Map pattern to 3x3 grid (top-left aligned)
+    -- IMPORTANT: Check each column position explicitly, not using #row
+    -- because sparse tables may not report correct length
     for row = 1, 3 do
         for col = 1, 3 do
             local slotIndex = (row - 1) * 3 + col
-            if row <= rows and pattern[row] and col <= #pattern[row] then
-                slots[slotIndex] = pattern[row][col]
+            if row <= rows and pattern[row] then
+                -- Explicitly access the column index
+                local ingredient = pattern[row][col]
+                slots[slotIndex] = ingredient
             else
                 slots[slotIndex] = nil
             end

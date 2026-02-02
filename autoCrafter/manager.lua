@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.4.4"
+local version = "2.4.6"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -861,6 +861,19 @@ local function checkRecipeIngredients(itemName)
     -- Rebuild index one more time
     invIndex = lib.utils.inventory.buildIndex(inputChest)
     
+    if debugMode then
+        print("[DEBUG] Building slot mapping for recipe...")
+        print("[DEBUG] Slot pattern: " .. textutils.serialize(slotPattern))
+        print("[DEBUG] Input chest inventory:")
+        for itemName, data in pairs(invIndex) do
+            local slotDetails = {}
+            for _, slotInfo in ipairs(data.slots) do
+                table.insert(slotDetails, string.format("slot %d: %d", slotInfo.slot, slotInfo.count))
+            end
+            print("  " .. itemName .. " - total: " .. data.total .. " (" .. table.concat(slotDetails, ", ") .. ")")
+        end
+    end
+    
     -- Track which slots we've used and how much
     local usedFromSlots = {}  -- slot -> count used
     
@@ -868,7 +881,12 @@ local function checkRecipeIngredients(itemName)
         local ingredient = slotPattern[i]
         if ingredient then
             -- Find matching items for this ingredient
-            local matchingItems = ingredientToItems[ingredient] or findItemsMatchingTag(ingredient, invIndex)
+            local matchingItems = ingredientToItems[ingredient] or findMatchingItems(ingredient, invIndex)
+            
+            if debugMode then
+                print(string.format("[DEBUG] Slot %d needs '%s', matching items: %s", 
+                    i, ingredient, table.concat(matchingItems, ", ")))
+            end
             
             -- Find a slot with any matching item that has remaining items
             local foundSlot = nil
@@ -881,6 +899,10 @@ local function checkRecipeIngredients(itemName)
                         if available > 0 then
                             foundSlot = slot
                             usedFromSlots[slot] = (usedFromSlots[slot] or 0) + 1
+                            if debugMode then
+                                print(string.format("[DEBUG]   Using input slot %d (%s, %d available)", 
+                                    slot, itemName, available))
+                            end
                             break
                         end
                     end
@@ -890,10 +912,18 @@ local function checkRecipeIngredients(itemName)
                 end
             end
             
+            if not foundSlot and debugMode then
+                print(string.format("[DEBUG]   WARNING: No slot found for position %d!", i))
+            end
+            
             slotMapping[i] = foundSlot or 0
         else
             slotMapping[i] = 0
         end
+    end
+    
+    if debugMode then
+        print("[DEBUG] Final slot mapping: " .. textutils.serialize(slotMapping))
     end
     
     return true, slotMapping
@@ -1329,6 +1359,7 @@ local function processConsoleInput(input)
         print("Commands:")
         print("  craft <item> [count] - Craft an item")
         print("  check <item>         - Check if item is craftable")
+        print("  recipe <item>        - Show recipe details (debug)")
         print("  search <query>       - Search recipes")
         print("  craftall             - Craft all available items not in EMC")
         print("  info                 - Show crafter info")
@@ -1421,6 +1452,58 @@ local function processConsoleInput(input)
             print("")
         else
             print("Usage: check <item>")
+        end
+    elseif input:match("^recipe%s+") then
+        local item = input:match("^recipe%s+(%S+)$")
+        if item then
+            print("")
+            local recipe = recipeDB.get(item)
+            if not recipe then
+                print("No recipe found for: " .. item)
+            else
+                print("Recipe for: " .. item)
+                print("  Output: " .. recipe.output .. " x" .. (recipe.count or 1))
+                print("  Type: " .. recipe.type)
+                print("")
+                print("  Raw pattern data:")
+                if recipe.pattern then
+                    for rowIdx, row in ipairs(recipe.pattern) do
+                        local rowStr = "    Row " .. rowIdx .. ": {"
+                        local parts = {}
+                        for colIdx = 1, 3 do
+                            local val = row[colIdx]
+                            if val then
+                                table.insert(parts, string.format("[%d]=%q", colIdx, val))
+                            else
+                                table.insert(parts, string.format("[%d]=nil", colIdx))
+                            end
+                        end
+                        print(rowStr .. table.concat(parts, ", ") .. "}")
+                    end
+                else
+                    print("    (no pattern - shapeless?)")
+                end
+                print("")
+                print("  toSlotArray result:")
+                local slots = recipeDB.toSlotArray(item)
+                if slots then
+                    for i = 1, 9 do
+                        local val = slots[i]
+                        print(string.format("    Slot %d: %s", i, val and val or "(empty)"))
+                    end
+                end
+                print("")
+                print("  Ingredient counts:")
+                local counts = recipeDB.getIngredientCounts(item)
+                if counts then
+                    for ing, cnt in pairs(counts) do
+                        print(string.format("    %s: %d", ing, cnt))
+                    end
+                end
+            end
+            print("")
+        else
+            print("Usage: recipe <item>")
         end
     elseif input:match("^search%s+") then
         local query = input:match("^search%s+(.+)$")
