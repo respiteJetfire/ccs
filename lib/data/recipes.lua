@@ -334,6 +334,62 @@ function recipes.search(query, limit)
     return results
 end
 
+--- Search for recipes that use ingredients matching a tag pattern
+-- This performs a "soft regex search" to find recipes that might use a tag
+-- @param tagPattern string Tag pattern to search for (e.g., "#minecraft:planks" or "planks")
+-- @param limit number|nil Maximum results to return (default: 50)
+-- @return table Array of matching item names
+function recipes.searchByTag(tagPattern, limit)
+    limit = limit or 50
+    local data = loadRecipeData()
+    if not data then
+        return {}
+    end
+    
+    -- Normalize the pattern - ensure it starts with # if it looks like a tag
+    local searchPattern = tagPattern
+    if not searchPattern:match("^#") and searchPattern:match("[:/%w]") then
+        searchPattern = "#" .. searchPattern
+    end
+    
+    local searchLower = string.lower(searchPattern)
+    local results = {}
+    
+    -- Search through all recipes for matching ingredient tags
+    for itemName, recipe in pairs(data) do
+        local ingredients = {}
+        
+        -- Extract ingredients based on recipe type
+        if recipe.type == "shapeless" then
+            ingredients = recipe.ingredients or {}
+        else
+            -- Flatten pattern array
+            for _, row in ipairs(recipe.pattern or {}) do
+                for _, ing in ipairs(row) do
+                    if ing then
+                        table.insert(ingredients, ing)
+                    end
+                end
+            end
+        end
+        
+        -- Check if any ingredient matches the search pattern
+        for _, ing in ipairs(ingredients) do
+            if ing and string.find(string.lower(ing), searchLower, 1, true) then
+                table.insert(results, itemName)
+                break
+            end
+        end
+        
+        if #results >= limit then
+            break
+        end
+    end
+    
+    table.sort(results)
+    return results
+end
+
 --- Get recipes by type
 -- @param recipeType string The recipe type ("2x2", "3x3", "shapeless")
 -- @param limit number|nil Maximum results (default: 100)

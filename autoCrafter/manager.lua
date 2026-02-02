@@ -741,6 +741,26 @@ local function craftItem(itemName, count)
     
     -- Check if recipe exists
     if not recipeDB.exists(itemName) then
+        -- Try soft search for tag-based recipes if the itemName looks like a tag
+        if itemName:match("^#") or itemName:match(":") then
+            if debugMode then
+                print("[DEBUG] Exact match failed, trying soft tag search for: " .. itemName)
+            end
+            
+            local matches = recipeDB.searchByTag(itemName, 10)
+            if #matches > 0 then
+                local matchList = {}
+                for i = 1, math.min(5, #matches) do
+                    table.insert(matchList, matches[i])
+                end
+                local suggestion = "No exact recipe found for: " .. itemName
+                suggestion = suggestion .. "\nRecipes using similar tags found: " .. table.concat(matchList, ", ")
+                if #matches > 5 then
+                    suggestion = suggestion .. " (and " .. (#matches - 5) .. " more)"
+                end
+                return false, suggestion, 0
+            end
+        end
         return false, "No recipe found for: " .. itemName, 0
     end
     
@@ -902,6 +922,11 @@ local function processSearchRequest(senderId, message)
     local limit = message.limit or 20
     
     local results = recipeDB.search(query, limit)
+    
+    -- If no results and query looks like a tag, try tag-based search
+    if #results == 0 and (query:match("^#") or query:match(":")) then
+        results = recipeDB.searchByTag(query, limit)
+    end
     
     local response = {
         type = "search_response",
@@ -1118,7 +1143,17 @@ local function processConsoleInput(input)
         if query then
             print("")
             local results = recipeDB.search(query, 10)
-            print("Search results for '" .. query .. "':")
+            
+            -- If no results and query looks like a tag, try tag-based search
+            if #results == 0 and (query:match("^#") or query:match(":")) then
+                results = recipeDB.searchByTag(query, 10)
+                if #results > 0 then
+                    print("Tag-based search results for '" .. query .. "':")
+                end
+            else
+                print("Search results for '" .. query .. "':")
+            end
+            
             if #results == 0 then
                 print("  No recipes found")
             else
