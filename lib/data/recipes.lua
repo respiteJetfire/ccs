@@ -188,13 +188,11 @@ local function loadRecipeData()
         local totalRecipes = 0
         
         for _, part in ipairs(parts) do
-            print(string.format("[INFO] Loading part %d from: %s", part.partNum, part.path))
-            
             -- Use loadfile instead of dofile to avoid complexity limits
             local chunk, err = loadfile(part.path)
             if not chunk then
-                print("[ERROR] Failed to compile part " .. part.partNum .. ": " .. tostring(err))
-                os.sleep(1)
+                -- Silent skip - just don't load this part
+                totalLoaded = totalLoaded  -- Keep count accurate
             else
                 local success, data = pcall(chunk)
                 if success and type(data) == "table" then
@@ -202,29 +200,25 @@ local function loadRecipeData()
                     for _ in pairs(data) do
                         recipeCount = recipeCount + 1
                     end
-                    print(string.format("[INFO] Part %d loaded: %d recipes", part.partNum, recipeCount))
                     table.insert(recipeTables, data)
                     table.insert(recipeDataLoadedFrom, part.path)
                     totalLoaded = totalLoaded + 1
                     totalRecipes = totalRecipes + recipeCount
-                else
-                    print("[ERROR] Failed to execute part " .. part.partNum .. ": " .. tostring(data))
-                    os.sleep(1)
                 end
             end
         end
         
         if totalLoaded > 0 then
             print(string.format("[INFO] Successfully loaded %d of %d parts (%d recipes total)", totalLoaded, #parts, totalRecipes))
+            os.sleep(0.3)
             print("[INFO] Merging recipe parts...")
-            os.sleep(0.5)
             recipeData = mergeRecipes(recipeTables)
             local finalCount = 0
             for _ in pairs(recipeData) do
                 finalCount = finalCount + 1
             end
             print(string.format("[INFO] Merge complete: %d unique recipes available", finalCount))
-            os.sleep(1)
+            os.sleep(0.5)
             return recipeData
         else
             print("[ERROR] No recipe parts could be loaded")

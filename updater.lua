@@ -20,7 +20,7 @@
     @author CCScripts
 ]]
 
-local VERSION = "2.0.4"
+local VERSION = "2.0.5"
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -237,9 +237,9 @@ local function getRemoteFileSize(remotePath)
         return tonumber(headers["Content-Length"])
     end
     
-    -- Fallback: estimate based on file type (recipe parts are ~460KB)
+    -- Fallback: estimate based on file type
     if remotePath:match("recipe_data_part%d+%.lua") then
-        return 470000  -- Estimate 460KB
+        return 80000  -- Estimate 80KB (new smaller parts are 64-120KB each)
     end
     
     return nil
@@ -351,8 +351,8 @@ local function installFloppyFiles(floppyFiles)
             -- Verify disk has space
             local diskFree = fs.getFreeSpace(targetPath)
             if diskFree < fileSize + 5000 then
-                print(string.format("  [WARN] Disk only has %d KB free, need %d KB", 
-                    math.floor(diskFree / 1024), math.floor(fileSize / 1024)))
+                print(string.format("  [WARN] Disk only has %d KB free, need %d KB (+ 5KB buffer)", 
+                    math.floor(diskFree / 1024), math.floor((fileSize + 5000) / 1024)))
                 targetPath = nil  -- Try again with next disk
             end
         end
