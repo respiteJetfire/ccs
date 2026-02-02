@@ -41,7 +41,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.0.1"
+local version = "2.0.2"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -1196,13 +1196,6 @@ while isRunning do
     else
         -- Neither enabled - just wait
         sleep(CHECK_INTERVAL)
-    end
-    
-    -- Handle termination
-    local event = os.pullEventRaw()
-    if event == "terminate" then
-        print("[INFO] Termination requested")
-        isRunning = false
     end
 end
 
