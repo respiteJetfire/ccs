@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.3.0"
+local version = "2.3.1"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -156,9 +156,11 @@ local function findChests()
     -- Method 3: Use peripheral.find() as fallback for inventory peripherals
     if peripheral.find then
         local inventories = {peripheral.find("inventory")}
+        -- peripheral.find returns (peripheral, name) pairs
         for i = 1, #inventories, 2 do
+            local p = inventories[i]
             local name = inventories[i + 1]
-            if name and not found[name] then
+            if p and name and not found[name] then
                 local pType = peripheral.getType(name)
                 table.insert(chests, {name = name, type = pType or "inventory"})
                 found[name] = true
