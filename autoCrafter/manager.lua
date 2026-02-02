@@ -41,7 +41,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.1.0"
+local version = "2.1.1"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -107,12 +107,14 @@ local config = lib.config.manager.load(configPath, configDefaults)
 -- Peripheral Discovery Functions
 --------------------------------------------------------------------------------
 
---- Find all chest/inventory peripherals
+--- Find all chest/inventory peripherals (adjacent and via wired modem)
 -- @return table Array of {name=string, type=string}
 local function findChests()
     local chests = {}
-    local names = peripheral.getNames and peripheral.getNames() or {}
+    local found = {}  -- Track names to avoid duplicates
     
+    -- Method 1: Check all peripherals (includes wired modem connections)
+    local names = peripheral.getNames and peripheral.getNames() or {}
     for _, name in ipairs(names) do
         local pType = peripheral.getType(name)
         -- Match common chest/inventory types
@@ -124,11 +126,41 @@ local function findChests()
             string.find(pType, "inventory") or
             pType == "minecraft:chest" or
             pType == "minecraft:barrel" or
-            pType == "minecraft:trapped_chest"
+            pType == "minecraft:trapped_chest" or
+            pType == "minecraft:shulker_box"
         ) then
             local p = peripheral.wrap(name)
             if p and p.list then
                 table.insert(chests, {name = name, type = pType})
+                found[name] = true
+            end
+        end
+    end
+    
+    -- Method 2: Check direct adjacent sides
+    local sides = {"top", "bottom", "left", "right", "front", "back"}
+    for _, side in ipairs(sides) do
+        if not found[side] then
+            local pType = peripheral.getType(side)
+            if pType then
+                local p = peripheral.wrap(side)
+                if p and p.list then
+                    table.insert(chests, {name = side, type = pType})
+                    found[side] = true
+                end
+            end
+        end
+    end
+    
+    -- Method 3: Use peripheral.find() as fallback for inventory peripherals
+    if peripheral.find then
+        local inventories = {peripheral.find("inventory")}
+        for i = 1, #inventories, 2 do
+            local name = inventories[i + 1]
+            if name and not found[name] then
+                local pType = peripheral.getType(name)
+                table.insert(chests, {name = name, type = pType or "inventory"})
+                found[name] = true
             end
         end
     end
@@ -136,12 +168,12 @@ local function findChests()
     return chests
 end
 
---- Find crafter peripheral
+--- Find crafter peripheral (adjacent and via wired modem)
 -- @return table|nil peripheral The crafter peripheral, or nil
 -- @return string|nil name The name of the crafter
 local function findCrafter()
+    -- Method 1: Check all peripherals (includes wired modem connections)
     local names = peripheral.getNames and peripheral.getNames() or {}
-    
     for _, name in ipairs(names) do
         local pType = peripheral.getType(name)
         if pType == "crafter" or string.find(name, "crafter") then
@@ -152,7 +184,7 @@ local function findCrafter()
         end
     end
     
-    -- Check direct sides
+    -- Method 2: Check direct adjacent sides
     local sides = {"top", "bottom", "left", "right", "front", "back"}
     for _, side in ipairs(sides) do
         local pType = peripheral.getType(side)
@@ -164,15 +196,23 @@ local function findCrafter()
         end
     end
     
+    -- Method 3: Use peripheral.find() as fallback
+    if peripheral.find then
+        local p, name = peripheral.find("crafter")
+        if p and p.craft then
+            return p, name
+        end
+    end
+    
     return nil, nil
 end
 
---- Find EMC interface peripheral
+--- Find EMC interface peripheral (adjacent and via wired modem)
 -- @return table|nil peripheral
 -- @return string|nil name
 local function findEmcInterface()
+    -- Method 1: Check all peripherals (includes wired modem connections)
     local names = peripheral.getNames and peripheral.getNames() or {}
-    
     for _, name in ipairs(names) do
         local pType = peripheral.getType(name)
         if pType and (
@@ -183,6 +223,26 @@ local function findEmcInterface()
             if p and p.list then
                 return p, name
             end
+        end
+    end
+    
+    -- Method 2: Check direct adjacent sides
+    local sides = {"top", "bottom", "left", "right", "front", "back"}
+    for _, side in ipairs(sides) do
+        local pType = peripheral.getType(side)
+        if pType and string.find(tostring(pType):lower(), "emc") then
+            local p = peripheral.wrap(side)
+            if p and p.list then
+                return p, side
+            end
+        end
+    end
+    
+    -- Method 3: Use peripheral.find() as fallback
+    if peripheral.find then
+        local p, name = peripheral.find("emcInterface")
+        if p and p.list then
+            return p, name
         end
     end
     
