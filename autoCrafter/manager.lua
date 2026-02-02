@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.4.6"
+local version = "2.4.7"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -818,11 +818,29 @@ local function checkRecipeIngredients(itemName)
         ingredientToItems[ingredient] = foundItems
         
         if totalAvailable < countNeeded then
-            -- Try EMC sourcing for the first matching item
-            if config.useEmc and #matchingItems > 0 and canSourceFromEmc(matchingItems[1]) then
-                local success, actualCount = requestFromEmc(matchingItems[1], countNeeded - totalAvailable)
-                if success then
-                    -- Rebuild index after EMC request
+            -- Try EMC sourcing - try each matching item until we get enough
+            if config.useEmc and #matchingItems > 0 then
+                local amountStillNeeded = countNeeded - totalAvailable
+                
+                -- Try each matching item to see if we can source it from EMC
+                for _, itemName in ipairs(matchingItems) do
+                    if amountStillNeeded <= 0 then
+                        break
+                    end
+                    
+                    if canSourceFromEmc(itemName) then
+                        local success, actualCount = requestFromEmc(itemName, amountStillNeeded)
+                        if success and actualCount > 0 then
+                            if debugMode then
+                                print(string.format("[DEBUG] Sourced %d x %s from EMC", actualCount, itemName))
+                            end
+                            amountStillNeeded = amountStillNeeded - actualCount
+                        end
+                    end
+                end
+                
+                -- Rebuild index after EMC requests
+                if amountStillNeeded < (countNeeded - totalAvailable) then
                     invIndex = lib.utils.inventory.buildIndex(inputChest)
                     -- Recalculate availability
                     totalAvailable = 0
