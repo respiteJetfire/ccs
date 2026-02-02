@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.4.1"
+local version = "2.4.2"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -710,33 +710,6 @@ end
 -- Crafting Functions
 --------------------------------------------------------------------------------
 
---- Find all items that can currently be crafted
--- @return table Array of {itemName, recipe, outputCount}
-local function findAllCraftableItems()
-    local craftable = {}
-    local allRecipeNames = recipeDB.list()
-    
-    if not allRecipeNames or #allRecipeNames == 0 then
-        return craftable
-    end
-    
-    for _, itemName in ipairs(allRecipeNames) do
-        local available, _ = checkRecipeIngredients(itemName)
-        if available then
-            local recipe = recipeDB.get(itemName)
-            if recipe then
-                table.insert(craftable, {
-                    itemName = itemName,
-                    recipe = recipe,
-                    outputCount = recipe.count or 1
-                })
-            end
-        end
-    end
-    
-    return craftable
-end
-
 --- Find items in inventory that could match an ingredient
 --- More flexible than exact matching - handles variants like "copper" vs "copper_ingot"
 -- @param ingredient string The ingredient to match
@@ -924,6 +897,33 @@ local function checkRecipeIngredients(itemName)
     end
     
     return true, slotMapping
+end
+
+--- Find all items that can currently be crafted
+-- @return table Array of {itemName, recipe, outputCount}
+local function findAllCraftableItems()
+    local craftable = {}
+    local allRecipeNames = recipeDB.list()
+    
+    if not allRecipeNames or #allRecipeNames == 0 then
+        return craftable
+    end
+    
+    for _, itemName in ipairs(allRecipeNames) do
+        local available, _ = checkRecipeIngredients(itemName)
+        if available then
+            local recipe = recipeDB.get(itemName)
+            if recipe then
+                table.insert(craftable, {
+                    itemName = itemName,
+                    recipe = recipe,
+                    outputCount = recipe.count or 1
+                })
+            end
+        end
+    end
+    
+    return craftable
 end
 
 --- Execute a craft using slot mapping
