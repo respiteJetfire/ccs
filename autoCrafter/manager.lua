@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.3.1"
+local version = "2.3.2"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -120,11 +120,11 @@ local function findChests()
         local pType = peripheral.getType(name)
         -- Match common chest/inventory types
         if pType and (
-            string.find(name, "chest") or
-            string.find(name, "barrel") or
-            string.find(name, "drawer") or
-            string.find(name, "crate") or
-            string.find(pType, "inventory") or
+            (type(name) == "string" and string.find(name, "chest")) or
+            (type(name) == "string" and string.find(name, "barrel")) or
+            (type(name) == "string" and string.find(name, "drawer")) or
+            (type(name) == "string" and string.find(name, "crate")) or
+            (type(pType) == "string" and string.find(pType, "inventory")) or
             pType == "minecraft:chest" or
             pType == "minecraft:barrel" or
             pType == "minecraft:trapped_chest" or
@@ -132,7 +132,7 @@ local function findChests()
         ) then
             local p = peripheral.wrap(name)
             if p and p.list then
-                table.insert(chests, {name = name, type = pType})
+                table.insert(chests, {name = tostring(name), type = tostring(pType)})
                 found[name] = true
             end
         end
@@ -146,7 +146,7 @@ local function findChests()
             if pType then
                 local p = peripheral.wrap(side)
                 if p and p.list then
-                    table.insert(chests, {name = side, type = pType})
+                    table.insert(chests, {name = tostring(side), type = tostring(pType)})
                     found[side] = true
                 end
             end
@@ -162,7 +162,7 @@ local function findChests()
             local name = inventories[i + 1]
             if p and name and not found[name] then
                 local pType = peripheral.getType(name)
-                table.insert(chests, {name = name, type = pType or "inventory"})
+                table.insert(chests, {name = tostring(name), type = tostring(pType or "inventory")})
                 found[name] = true
             end
         end
