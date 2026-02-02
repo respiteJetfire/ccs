@@ -41,7 +41,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.0.2"
+local version = "2.0.3"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -1157,22 +1157,27 @@ local isRunning = true
 while isRunning do
     if config.acceptConsole and config.acceptNetwork then
         -- Both enabled - use parallel
-        parallel.waitForAny(
+        local _, key = parallel.waitForAny(
             function()
                 -- Network listener
-                local senderId, message, protocol = lib.network.rednet.receive(PROTOCOL, CHECK_INTERVAL)
-                if senderId and message then
-                    processMessage(senderId, message)
+                while true do
+                    local senderId, message, protocol = lib.network.rednet.receive(PROTOCOL, 1)
+                    if senderId and message then
+                        processMessage(senderId, message)
+                    end
                 end
             end,
             function()
                 -- Console input
-                term.write("> ")
-                local input = read()
-                if input then
-                    local result = processConsoleInput(input)
-                    if result == "exit" then
-                        isRunning = false
+                while true do
+                    term.write("> ")
+                    local input = read()
+                    if input then
+                        local result = processConsoleInput(input)
+                        if result == "exit" then
+                            isRunning = false
+                            return
+                        end
                     end
                 end
             end
