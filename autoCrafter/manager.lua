@@ -939,19 +939,95 @@ local function findAllCraftableItems()
         return craftable
     end
     
-    for _, itemName in ipairs(allRecipeNames) do
-        local available, _ = checkRecipeIngredients(itemName)
-        if available then
-            local recipe = recipeDB.get(itemName)
-            if recipe then
-                table.insert(craftable, {
-                    itemName = itemName,
-                    recipe = recipe,
-                    outputCount = recipe.count or 1
-                })
+    -- First, build inventory index once
+    local invIndex = lib.utils.inventory.buildIndex(inputChest)
+    
+    -- Get list of items we actually have
+    local availableItems = {}
+    for itemName, _ in pairs(invIndex) do
+        availableItems[itemName] = true
+        -- Also add base name without namespace for fuzzy matching
+        local baseName = itemName:match(":(.+)$")
+        if baseName then
+            availableItems[baseName] = true
+        end
+    end
+    
+    if next(availableItems) == nil then
+        print("[INFO] Input chest is empty - no items to craft with")
+        return craftable
+    end
+    
+    print(string.format("[INFO] Have %d unique item types in input chest", 
+        lib.utils.inventory.getUniqueCount(invIndex)))
+    
+    local checked = 0
+    local totalRecipes = #allRecipeNames
+    
+    for idx, itemName in ipairs(allRecipeNames) do
+        -- Show progress every 500 recipes
+        if idx % 500 == 0 then
+            print(string.format("[INFO] Checking recipes: %d/%d (found %d craftable)", 
+                idx, totalRecipes, #craftable))
+        end
+        
+        -- Quick pre-check: see if any ingredient might be available
+        local recipe = recipeDB.get(itemName)
+        if recipe then
+            local mightBeCraftable = false
+            local ingredients = recipeDB.getIngredients(itemName)
+            
+            for _, ing in ipairs(ingredients) do
+                -- Check if we have this ingredient or something that could match it
+                if availableItems[ing] then
+                    mightBeCraftable = true
+                    break
+                end
+                -- Check tags - if ingredient is a tag, check if any item might match
+                if recipeDB.isTag(ing) then
+                    local tagName = recipeDB.getTagName(ing)
+                    -- Check common patterns like planks, ingots, etc
+                    for itemName2, _ in pairs(invIndex) do
+                        if itemName2:find("plank") and tagName:find("plank") then
+                            mightBeCraftable = true
+                            break
+                        elseif itemName2:find("ingot") and tagName:find("ingot") then
+                            mightBeCraftable = true
+                            break
+                        elseif itemName2:find("log") and tagName:find("log") then
+                            mightBeCraftable = true
+                            break
+                        elseif itemName2:find("stone") and tagName:find("stone") then
+                            mightBeCraftable = true
+                            break
+                        end
+                    end
+                    if mightBeCraftable then break end
+                end
+                -- Check base name match
+                local baseName = ing:match(":(.+)$")
+                if baseName and availableItems[baseName] then
+                    mightBeCraftable = true
+                    break
+                end
+            end
+            
+            -- Only do full ingredient check if quick check passed
+            if mightBeCraftable then
+                checked = checked + 1
+                local available, _ = checkRecipeIngredients(itemName)
+                if available then
+                    table.insert(craftable, {
+                        itemName = itemName,
+                        recipe = recipe,
+                        outputCount = recipe.count or 1
+                    })
+                end
             end
         end
     end
+    
+    print(string.format("[INFO] Full-checked %d recipes, found %d craftable", checked, #craftable))
     
     return craftable
 end

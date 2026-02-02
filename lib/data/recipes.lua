@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.4.8"
+recipes._VERSION = "1.4.9"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -364,10 +364,15 @@ function recipes.searchByTag(tagPattern, limit)
             ingredients = recipe.ingredients or {}
         else
             -- Flatten pattern array
-            for _, row in ipairs(recipe.pattern or {}) do
-                for _, ing in ipairs(row) do
-                    if ing then
-                        table.insert(ingredients, ing)
+            -- IMPORTANT: Iterate explicitly over rows 1-3 and columns 1-3
+            -- because ipairs stops at the first nil (sparse tables)
+            for row = 1, 3 do
+                if recipe.pattern and recipe.pattern[row] then
+                    for col = 1, 3 do
+                        local ing = recipe.pattern[row][col]
+                        if ing then
+                            table.insert(ingredients, ing)
+                        end
                     end
                 end
             end
@@ -540,19 +545,15 @@ function recipes.toSlotArray(itemName)
     
     local slots = {}
     
-    -- Determine pattern dimensions
-    local rows = #pattern
-    
     -- Map pattern to 3x3 grid (top-left aligned)
-    -- IMPORTANT: Check each column position explicitly, not using #row
-    -- because sparse tables may not report correct length
+    -- IMPORTANT: Do NOT use #pattern or #row - sparse tables may not report correct length
+    -- Always iterate explicitly over indices 1-3 and check if the entry exists
     for row = 1, 3 do
         for col = 1, 3 do
             local slotIndex = (row - 1) * 3 + col
-            if row <= rows and pattern[row] then
-                -- Explicitly access the column index
-                local ingredient = pattern[row][col]
-                slots[slotIndex] = ingredient
+            -- Check if this row exists and has a column entry
+            if pattern[row] and pattern[row][col] then
+                slots[slotIndex] = pattern[row][col]
             else
                 slots[slotIndex] = nil
             end
@@ -585,21 +586,27 @@ function recipes.getPatternDisplay(itemName)
         end
     else
         table.insert(lines, "Pattern:")
-        for _, row in ipairs(recipe.pattern or {}) do
-            local rowStr = "  "
-            for i, cell in ipairs(row) do
-                if i > 1 then rowStr = rowStr .. " | " end
-                if cell then
-                    local shortName = cell:match(":(.+)$") or cell
-                    if #shortName > 10 then
-                        shortName = shortName:sub(1, 10) .. ".."
+        -- IMPORTANT: Iterate explicitly over rows 1-3 and columns 1-3
+        -- because ipairs stops at the first nil (sparse tables)
+        for row = 1, 3 do
+            local rowData = recipe.pattern and recipe.pattern[row]
+            if rowData then
+                local rowStr = "  "
+                for col = 1, 3 do
+                    if col > 1 then rowStr = rowStr .. " | " end
+                    local cell = rowData[col]
+                    if cell then
+                        local shortName = cell:match(":(.+)$") or cell
+                        if #shortName > 10 then
+                            shortName = shortName:sub(1, 10) .. ".."
+                        end
+                        rowStr = rowStr .. shortName
+                    else
+                        rowStr = rowStr .. "[empty]"
                     end
-                    rowStr = rowStr .. shortName
-                else
-                    rowStr = rowStr .. "[empty]"
                 end
+                table.insert(lines, rowStr)
             end
-            table.insert(lines, rowStr)
         end
     end
     
