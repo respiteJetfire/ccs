@@ -41,7 +41,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.0.3"
+local version = "2.1.0"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
