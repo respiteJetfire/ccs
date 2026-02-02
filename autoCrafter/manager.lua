@@ -34,7 +34,7 @@
     
     Network Protocol: auto_crafter
     
-    @version 2.3.0
+    @version 2.4.0
     @author CCScripts
     @license MIT
 ]]
@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.3.2"
+local version = "2.4.0"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -672,9 +672,91 @@ local function requestFromEmc(itemName, count)
     return lib.peripherals.emc.requestToInventory(emcInterface, inputChestName, itemName, count)
 end
 
+--- Get all items currently stored in EMC interface
+-- @return table|nil itemIndex Map of itemName -> count, or nil if no EMC
+local function getEmcItems()
+    if not emcInterface then
+        return nil
+    end
+    
+    local items = {}
+    
+    -- Try to get list of items in EMC
+    if emcInterface.list then
+        local emcList = emcInterface.list()
+        if emcList then
+            for _, item in pairs(emcList) do
+                if item.name then
+                    items[item.name] = (items[item.name] or 0) + (item.count or 1)
+                end
+            end
+        end
+    end
+    
+    -- Alternative: try getAvailableItems if list() not available
+    if next(items) == nil and emcInterface.getAvailableItems then
+        local available = emcInterface.getAvailableItems()
+        if available then
+            for itemName, _ in pairs(available) do
+                items[itemName] = 1  -- Mark as available (count unknown)
+            end
+        end
+    end
+    
+    return items
+end
+
 --------------------------------------------------------------------------------
 -- Crafting Functions
 --------------------------------------------------------------------------------
+
+--- Find all items that can currently be crafted
+-- @return table Array of {itemName, recipe, outputCount}
+local function findAllCraftableItems()
+    local craftable = {}
+    local allRecipes = recipeDB.getAll()
+    
+    if not allRecipes then
+        return craftable
+    end
+    
+    for itemName, recipe in pairs(allRecipes) do
+        local available, _ = checkRecipeIngredients(itemName)
+        if available then
+            table.insert(craftable, {
+                itemName = itemName,
+                recipe = recipe,
+                outputCount = recipe.count or 1
+            })
+        end
+    end
+    
+    return craftable
+end
+
+--- Find all items that can currently be crafted
+-- @return table Array of {itemName, recipe, outputCount}
+local function findAllCraftableItems()
+    local craftable = {}
+    local allRecipes = recipeDB.getAll()
+    
+    if not allRecipes then
+        return craftable
+    end
+    
+    for itemName, recipe in pairs(allRecipes) do
+        local available, _ = checkRecipeIngredients(itemName)
+        if available then
+            table.insert(craftable, {
+                itemName = itemName,
+                recipe = recipe,
+                outputCount = recipe.count or 1
+            })
+        end
+    end
+    
+    return craftable
+end
 
 --- Find items in inventory that could match an ingredient
 --- More flexible than exact matching - handles variants like "copper" vs "copper_ingot"
@@ -1221,6 +1303,7 @@ local function processConsoleInput(input)
         print("  craft <item> [count] - Craft an item")
         print("  check <item>         - Check if item is craftable")
         print("  search <query>       - Search recipes")
+        print("  craftall             - Craft all available items not in EMC")
         print("  info                 - Show crafter info")
         print("  stats                - Show recipe statistics")
         print("  inventory            - Show input chest contents")
@@ -1339,6 +1422,62 @@ local function processConsoleInput(input)
         else
             print("Usage: search <query>")
         end
+    elseif input == "craftall" then
+        print("Finding all craftable items...")
+        local craftable = findAllCraftableItems()
+        
+        if #craftable == 0 then
+            print("No items can be crafted with current resources.")
+            return
+        end
+        
+        print(string.format("Found %d craftable items.", #craftable))
+        
+        -- Get EMC inventory to check what we already have
+        local emcItems = getEmcItems()
+        local toCraft = {}
+        
+        if emcItems then
+            print("Checking which items are not in EMC interface...")
+            for _, item in ipairs(craftable) do
+                if not emcItems[item.itemName] then
+                    table.insert(toCraft, item)
+                end
+            end
+        else
+            print("[WARN] No EMC interface - will craft all available items")
+            toCraft = craftable
+        end
+        
+        if #toCraft == 0 then
+            print("All craftable items already exist in EMC interface.")
+            return
+        end
+        
+        print(string.format("\nCrafting %d items not in EMC...", #toCraft))
+        print("")
+        
+        local crafted = 0
+        local failed = 0
+        
+        for _, item in ipairs(toCraft) do
+            print(string.format("Crafting: %s (yields %d)...", item.itemName, item.outputCount))
+            local success, msg, count = craftItem(item.itemName, 1)
+            
+            if success then
+                crafted = crafted + 1
+                print("  ✓ " .. msg)
+            else
+                failed = failed + 1
+                print("  ✗ " .. msg)
+            end
+            
+            sleep(0.1)  -- Small delay between crafts
+        end
+        
+        print("")
+        print(string.format("Summary: %d crafted, %d failed, %d total", crafted, failed, #toCraft))
+        print("")
     else
         print("Unknown command. Type 'help' for available commands.")
     end
