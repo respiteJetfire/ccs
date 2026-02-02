@@ -348,7 +348,7 @@ function recipes.searchByTag(tagPattern, limit)
     
     -- Normalize the pattern - ensure it starts with # if it looks like a tag
     local searchPattern = tagPattern
-    if not searchPattern:match("^#") and searchPattern:match("[:/%w]") then
+    if not searchPattern:match("^#") and (searchPattern:match(":") or searchPattern:match("/")) then
         searchPattern = "#" .. searchPattern
     end
     

@@ -46,6 +46,8 @@ local version = "2.0.3"
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
 local PASSWORD = "apple"           -- Default password for requests
+local TAG_SEARCH_LIMIT = 10        -- Maximum results for tag-based search fallback
+local MAX_DISPLAY_SUGGESTIONS = 5  -- Maximum suggestions to display in error messages
 
 --------------------------------------------------------------------------------
 -- Library Loading
@@ -747,16 +749,16 @@ local function craftItem(itemName, count)
                 print("[DEBUG] Exact match failed, trying soft tag search for: " .. itemName)
             end
             
-            local matches = recipeDB.searchByTag(itemName, 10)
+            local matches = recipeDB.searchByTag(itemName, TAG_SEARCH_LIMIT)
             if #matches > 0 then
                 local matchList = {}
-                for i = 1, math.min(5, #matches) do
+                for i = 1, math.min(MAX_DISPLAY_SUGGESTIONS, #matches) do
                     table.insert(matchList, matches[i])
                 end
                 local suggestion = "No exact recipe found for: " .. itemName
                 suggestion = suggestion .. "\nRecipes using similar tags found: " .. table.concat(matchList, ", ")
-                if #matches > 5 then
-                    suggestion = suggestion .. " (and " .. (#matches - 5) .. " more)"
+                if #matches > MAX_DISPLAY_SUGGESTIONS then
+                    suggestion = suggestion .. " (and " .. (#matches - MAX_DISPLAY_SUGGESTIONS) .. " more)"
                 end
                 return false, suggestion, 0
             end
@@ -1142,11 +1144,11 @@ local function processConsoleInput(input)
         local query = input:match("^search%s+(.+)$")
         if query then
             print("")
-            local results = recipeDB.search(query, 10)
+            local results = recipeDB.search(query, TAG_SEARCH_LIMIT)
             
             -- If no results and query looks like a tag, try tag-based search
             if #results == 0 and (query:match("^#") or query:match(":")) then
-                results = recipeDB.searchByTag(query, 10)
+                results = recipeDB.searchByTag(query, TAG_SEARCH_LIMIT)
                 if #results > 0 then
                     print("Tag-based search results for '" .. query .. "':")
                 end
