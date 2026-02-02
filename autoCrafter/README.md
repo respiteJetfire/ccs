@@ -124,12 +124,39 @@ autoCrafter/manager.lua --wizard
 |---------|-------------|
 | `craft <item> [count]` | Craft an item (e.g., `craft minecraft:chest 4`) |
 | `check <item>` | Check if an item is craftable |
-| `search <query>` | Search recipes by name |
+| `search <query>` | Search recipes by name or ingredient tag (e.g., `search #minecraft:planks`) |
 | `info` | Show crafter information |
 | `stats` | Show recipe statistics |
 | `inventory` | Show input chest contents |
 | `help` | Show available commands |
 | `exit` | Exit the program |
+
+#### Tag-Based Search
+
+The `search` command supports searching for recipes by ingredient tags. When you search for a tag pattern like `#minecraft:planks`, it will find all recipes that use that tag as an ingredient:
+
+```
+> search #minecraft:planks
+
+Tag-based search results for '#minecraft:planks':
+  minecraft:chest
+  minecraft:crafting_table
+  minecraft:stick
+  minecraft:boat
+  minecraft:button
+  ...
+```
+
+You can search with or without the `#` prefix - it will be added automatically if the pattern contains a `:`.
+
+If you try to craft an item using a tag name, you'll get helpful suggestions:
+
+```
+> craft #minecraft:planks 1
+
+No exact recipe found for: #minecraft:planks
+Recipes using similar tags found: minecraft:chest, minecraft:crafting_table, minecraft:stick, minecraft:boat, minecraft:button (and 15 more)
+```
 
 ### Network Protocol
 
