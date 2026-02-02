@@ -7,7 +7,7 @@
 local emc = {}
 
 --- Version information
-emc._VERSION = "1.0.1"
+emc._VERSION = "1.0.2"
 emc._DESCRIPTION = "EMC peripheral utilities for ProjectE integration"
 
 --- EMC peripheral type patterns
@@ -408,6 +408,99 @@ function emc.addEmcType(typeName)
         table.insert(emc.EMC_TYPES, typeName)
         emcTypeSet[typeName] = true
     end
+end
+
+--------------------------------------------------------------------------------
+-- Advanced EMC Functions
+--------------------------------------------------------------------------------
+
+---Check if an item can be sourced from EMC
+---Verifies if an item is available in the learned items list
+---@param link table|nil The EMC link peripheral (auto-detects if nil)
+---@param itemName string The item name to check
+---@return boolean canSource True if the item can be sourced
+function emc.canSourceItem(link, itemName)
+    -- Auto-detect if not provided
+    if not link then
+        link = emc.findEmcLink()
+        if not link then
+            return false
+        end
+    end
+    
+    -- Check if EMC interface has the item
+    local items, err = emc.getEmcItems(link)
+    if not items then
+        -- Fallback to direct list() method
+        local success, list = pcall(function() return link.list() end)
+        if not success or not list then
+            return false
+        end
+        for _, item in pairs(list) do
+            if item.name == itemName then
+                return true
+            end
+        end
+        return false
+    end
+    
+    for _, item in ipairs(items) do
+        if item.name == itemName then
+            return true
+        end
+    end
+    
+    return false
+end
+
+---Request items from EMC interface and push to a target inventory
+---@param link table|nil The EMC link peripheral (auto-detects if nil)
+---@param targetInventoryName string The name of the target inventory peripheral
+---@param itemName string The item to request
+---@param count number The quantity to request
+---@return boolean success True if items were transferred
+---@return number transferred The actual number of items transferred
+function emc.requestToInventory(link, targetInventoryName, itemName, count)
+    -- Auto-detect if not provided
+    if not link then
+        link = emc.findEmcLink()
+        if not link then
+            return false, 0
+        end
+    end
+    
+    if not targetInventoryName or not itemName or not count then
+        return false, 0
+    end
+    
+    -- Find the item in EMC interface
+    local success, items = pcall(function() return link.list() end)
+    if not success or not items then
+        return false, 0
+    end
+    
+    local sourceSlot = nil
+    for slot, item in pairs(items) do
+        if item.name == itemName then
+            sourceSlot = slot
+            break
+        end
+    end
+    
+    if not sourceSlot then
+        return false, 0
+    end
+    
+    -- Push to target inventory
+    local pushSuccess, pushed = pcall(function()
+        return link.pushItems(targetInventoryName, sourceSlot, count)
+    end)
+    
+    if not pushSuccess then
+        return false, 0
+    end
+    
+    return pushed and pushed > 0, pushed or 0
 end
 
 return emc

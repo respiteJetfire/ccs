@@ -17,7 +17,7 @@
 local recipes = {}
 
 -- Version information
-recipes._VERSION = "1.4.5"
+recipes._VERSION = "1.4.6"
 recipes._DESCRIPTION = "Crafting recipe database and utilities"
 
 --------------------------------------------------------------------------------
@@ -703,6 +703,214 @@ function recipes.getStats()
     end
     
     return stats
+end
+
+--------------------------------------------------------------------------------
+-- Tag Resolution Functions
+--------------------------------------------------------------------------------
+
+-- Known tag -> item mappings (common cases)
+local TAG_MAPPINGS = {
+    -- Common forge tags
+    ["#forge:ingots/iron"] = "minecraft:iron_ingot",
+    ["#forge:ingots/gold"] = "minecraft:gold_ingot",
+    ["#forge:ingots/copper"] = "minecraft:copper_ingot",
+    ["#forge:gems/diamond"] = "minecraft:diamond",
+    ["#forge:gems/emerald"] = "minecraft:emerald",
+    ["#forge:gems/lapis"] = "minecraft:lapis_lazuli",
+    ["#forge:gems/amethyst"] = "minecraft:amethyst_shard",
+    ["#forge:dusts/redstone"] = "minecraft:redstone",
+    ["#forge:dusts/glowstone"] = "minecraft:glowstone_dust",
+    ["#forge:rods/blaze"] = "minecraft:blaze_rod",
+    ["#forge:string"] = "minecraft:string",
+    ["#forge:leather"] = "minecraft:leather",
+    ["#forge:feathers"] = "minecraft:feather",
+    ["#forge:ender_pearls"] = "minecraft:ender_pearl",
+    ["#forge:slimeballs"] = "minecraft:slime_ball",
+    ["#forge:bones"] = "minecraft:bone",
+    ["#forge:gunpowder"] = "minecraft:gunpowder",
+    ["#forge:stone"] = "minecraft:stone",
+    ["#forge:cobblestone"] = "minecraft:cobblestone",
+    ["#forge:glass"] = "minecraft:glass",
+    ["#forge:sand"] = "minecraft:sand",
+    ["#forge:gravel"] = "minecraft:gravel",
+    ["#forge:obsidian"] = "minecraft:obsidian",
+    ["#forge:netherrack"] = "minecraft:netherrack",
+    ["#minecraft:planks"] = "minecraft:oak_planks",
+    ["#minecraft:logs"] = "minecraft:oak_log",
+    ["#minecraft:wool"] = "minecraft:white_wool",
+    ["#minecraft:stone_crafting_materials"] = "minecraft:cobblestone",
+    ["#minecraft:coals"] = "minecraft:coal",
+    ["#forge:plates/iron"] = "create:iron_sheet",
+    ["#forge:plates/brass"] = "create:brass_sheet",
+    ["#forge:plates/copper"] = "create:copper_sheet",
+    ["#forge:plates/gold"] = "create:golden_sheet",
+    ["#forge:nuggets/iron"] = "minecraft:iron_nugget",
+    ["#forge:nuggets/gold"] = "minecraft:gold_nugget",
+    ["#forge:storage_blocks/iron"] = "minecraft:iron_block",
+    ["#forge:storage_blocks/gold"] = "minecraft:gold_block",
+    ["#forge:storage_blocks/diamond"] = "minecraft:diamond_block",
+    ["#forge:storage_blocks/emerald"] = "minecraft:emerald_block",
+    ["#forge:storage_blocks/coal"] = "minecraft:coal_block",
+    ["#forge:storage_blocks/redstone"] = "minecraft:redstone_block",
+    ["#forge:storage_blocks/lapis"] = "minecraft:lapis_block",
+    ["#forge:chests"] = "minecraft:chest",
+    ["#forge:chests/wooden"] = "minecraft:chest",
+}
+
+--- Add a custom tag mapping
+-- @param tag string The tag (e.g., "#forge:ingots/steel")
+-- @param item string The item name (e.g., "mekanism:ingot_steel")
+function recipes.addTagMapping(tag, item)
+    TAG_MAPPINGS[tag] = item
+end
+
+--- Get all registered tag mappings
+-- @return table Map of tag -> item
+function recipes.getTagMappings()
+    local copy = {}
+    for k, v in pairs(TAG_MAPPINGS) do
+        copy[k] = v
+    end
+    return copy
+end
+
+--- Resolve a tag to an actual item name
+-- @param ingredient string The ingredient (may be a tag starting with #)
+-- @return string The resolved item name (original if not a tag or unmapped)
+function recipes.resolveTag(ingredient)
+    if not ingredient then
+        return nil
+    end
+    
+    -- If not a tag, return as-is
+    if not recipes.isTag(ingredient) then
+        return ingredient
+    end
+    
+    -- Check known mappings
+    if TAG_MAPPINGS[ingredient] then
+        return TAG_MAPPINGS[ingredient]
+    end
+    
+    -- Try to guess from tag name
+    local tagName = recipes.getTagName(ingredient)
+    
+    -- Pattern: forge:category/item -> minecraft:item
+    local category, item = tagName:match("forge:(%w+)/(%w+)")
+    if item then
+        local guess = "minecraft:" .. item
+        return guess
+    end
+    
+    -- Unable to resolve - return original
+    return ingredient
+end
+
+--- Find all items in an inventory index that could match a tag
+-- @param tag string The tag (e.g., "#minecraft:planks")
+-- @param invIndex table The inventory index from lib.utils.inventory.buildIndex()
+-- @return table Array of item names that match the tag
+function recipes.findItemsMatchingTag(tag, invIndex)
+    if not recipes.isTag(tag) then
+        return {tag}  -- Not a tag, return as-is
+    end
+    
+    local tagName = recipes.getTagName(tag)  -- Remove # prefix
+    local matches = {}
+    
+    -- Helper function to check if item matches a forge tag with suffix
+    local function matchesForgeSuffix(itemName, material, suffixes)
+        for _, suffix in ipairs(suffixes) do
+            if itemName == "create:" .. material .. suffix or 
+               itemName == "minecraft:" .. material .. suffix then
+                return true
+            end
+        end
+        return false
+    end
+    
+    -- Check all items in inventory
+    for itemName, _ in pairs(invIndex) do
+        local matched = false
+        
+        -- Pattern matching for common tag types
+        if tagName:match("^forge:ingots/") then
+            local material = tagName:match("forge:ingots/(%w+)")
+            if itemName == "minecraft:" .. material .. "_ingot" or
+               itemName:match(":" .. material .. "_ingot$") then
+                matched = true
+            end
+        elseif tagName:match("^forge:gems/") then
+            local material = tagName:match("forge:gems/(%w+)")
+            if itemName == "minecraft:" .. material or
+               itemName:match(":" .. material .. "$") then
+                matched = true
+            end
+        elseif tagName:match("^forge:dusts/") then
+            local material = tagName:match("forge:dusts/(%w+)")
+            if itemName == "minecraft:" .. material or
+               itemName:match(":" .. material .. "$") or
+               itemName:match(":" .. material .. "_dust$") then
+                matched = true
+            end
+        elseif tagName:match("^forge:nuggets/") then
+            local material = tagName:match("forge:nuggets/(%w+)")
+            if itemName == "minecraft:" .. material .. "_nugget" or
+               itemName:match(":" .. material .. "_nugget$") then
+                matched = true
+            end
+        elseif tagName:match("^forge:plates/") then
+            local material = tagName:match("forge:plates/(%w+)")
+            if matchesForgeSuffix(itemName, material, {"_sheet", "_plate"}) then
+                matched = true
+            end
+        elseif tagName:match("^forge:storage_blocks/") then
+            local material = tagName:match("forge:storage_blocks/(%w+)")
+            if itemName == "minecraft:" .. material .. "_block" or
+               itemName:match(":" .. material .. "_block$") then
+                matched = true
+            end
+        elseif tagName == "minecraft:planks" then
+            if itemName:match("_planks$") then
+                matched = true
+            end
+        elseif tagName == "minecraft:logs" then
+            if itemName:match("_log$") or itemName:match("_wood$") then
+                matched = true
+            end
+        elseif tagName == "minecraft:wool" then
+            if itemName:match("_wool$") then
+                matched = true
+            end
+        elseif tagName == "forge:stone" or tagName == "minecraft:stone_crafting_materials" then
+            if itemName == "minecraft:stone" or 
+               itemName == "minecraft:cobblestone" or
+               itemName == "minecraft:cobbled_deepslate" then
+                matched = true
+            end
+        elseif tagName == "forge:glass" then
+            if itemName:match("glass$") and not itemName:match("pane") then
+                matched = true
+            end
+        elseif tagName == "forge:chests" or tagName == "forge:chests/wooden" then
+            if itemName:match("chest$") and not itemName:match("ender") then
+                matched = true
+            end
+        end
+        
+        if matched then
+            table.insert(matches, itemName)
+        end
+    end
+    
+    -- If no matches found in inventory, fall back to default resolution
+    if #matches == 0 then
+        local defaultItem = recipes.resolveTag(tag)
+        return {defaultItem}
+    end
+    
+    return matches
 end
 
 return recipes

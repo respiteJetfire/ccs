@@ -20,7 +20,7 @@
     @author CCScripts
 ]]
 
-local VERSION = "2.0.5"
+local VERSION = "2.0.6"
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -416,6 +416,7 @@ local SCRIPT_MANIFESTS = {
             "config/manager.lua",
             "config/wizard.lua",
             "data/recipes.lua",
+            "utils/inventory.lua",
             -- NOTE: Recipe part files are auto-discovered and downloaded
             -- System will scan for recipe_data_part*.lua files and download all found
         },

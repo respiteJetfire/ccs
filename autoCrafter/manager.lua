@@ -18,9 +18,10 @@
         - lib.config.manager      -- Configuration file management
         - lib.config.wizard       -- Interactive setup wizard
         - lib.peripherals.modem   -- Modem discovery and rednet
-        - lib.peripherals.emc     -- EMC interface utilities
-        - lib.network.rednet      -- Network communication
-        - lib.data.recipes        -- Recipe database
+        - lib.peripherals.emc     -- EMC interface utilities (canSourceItem, requestToInventory)
+        - lib.network.rednet      -- Network communication with error handling
+        - lib.data.recipes        -- Recipe database (resolveTag, findItemsMatchingTag)
+        - lib.utils.inventory     -- Inventory indexing and management
     
     Peripherals Required:
         - Wireless Modem (for network requests)
@@ -33,7 +34,7 @@
     
     Network Protocol: auto_crafter
     
-    @version 2.0.0
+    @version 2.3.0
     @author CCScripts
     @license MIT
 ]]
@@ -41,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.1.1"
+local version = "2.3.0"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -208,45 +209,11 @@ local function findCrafter()
 end
 
 --- Find EMC interface peripheral (adjacent and via wired modem)
+-- Uses lib.peripherals.emc for comprehensive discovery
 -- @return table|nil peripheral
 -- @return string|nil name
 local function findEmcInterface()
-    -- Method 1: Check all peripherals (includes wired modem connections)
-    local names = peripheral.getNames and peripheral.getNames() or {}
-    for _, name in ipairs(names) do
-        local pType = peripheral.getType(name)
-        if pType and (
-            string.find(name:lower(), "emc") or
-            string.find(tostring(pType):lower(), "emc")
-        ) then
-            local p = peripheral.wrap(name)
-            if p and p.list then
-                return p, name
-            end
-        end
-    end
-    
-    -- Method 2: Check direct adjacent sides
-    local sides = {"top", "bottom", "left", "right", "front", "back"}
-    for _, side in ipairs(sides) do
-        local pType = peripheral.getType(side)
-        if pType and string.find(tostring(pType):lower(), "emc") then
-            local p = peripheral.wrap(side)
-            if p and p.list then
-                return p, side
-            end
-        end
-    end
-    
-    -- Method 3: Use peripheral.find() as fallback
-    if peripheral.find then
-        local p, name = peripheral.find("emcInterface")
-        if p and p.list then
-            return p, name
-        end
-    end
-    
-    return nil, nil
+    return lib.peripherals.emc.findEmcLink()
 end
 
 --------------------------------------------------------------------------------
@@ -672,56 +639,13 @@ local function findItemsMatchingTag(tag, invIndex)
 end
 
 --------------------------------------------------------------------------------
--- Inventory Management
+-- Inventory Management (via lib.utils.inventory)
 --------------------------------------------------------------------------------
-
---- Build an index of items in an inventory
--- @param inv table The inventory peripheral
--- @return table Map of itemName -> {slots={slot1, slot2, ...}, total=count}
-local function buildInventoryIndex(inv)
-    local index = {}
-    local items = inv.list()
-    
-    for slot, item in pairs(items) do
-        local name = item.name
-        if not index[name] then
-            index[name] = {slots = {}, total = 0}
-        end
-        table.insert(index[name].slots, {slot = slot, count = item.count})
-        index[name].total = index[name].total + item.count
-    end
-    
-    return index
-end
-
---- Check if an item is available in an inventory
--- @param index table The inventory index
--- @param itemName string The item to check
--- @param count number The count needed
--- @return boolean available
--- @return number availableCount
-local function checkAvailability(index, itemName, count)
-    local entry = index[itemName]
-    if not entry then
-        return false, 0
-    end
-    return entry.total >= count, entry.total
-end
-
---- Find a slot with an item
--- @param index table The inventory index
--- @param itemName string The item to find
--- @return number|nil The slot number, or nil
-local function findSlot(index, itemName)
-    local entry = index[itemName]
-    if not entry or #entry.slots == 0 then
-        return nil
-    end
-    return entry.slots[1].slot
-end
+-- Inventory functions moved to lib/utils/inventory.lua
+-- Use lib.utils.inventory.buildIndex(), checkAvailability(), findSlot()
 
 --------------------------------------------------------------------------------
--- EMC Sourcing
+-- EMC Sourcing (via lib.peripherals.emc)
 --------------------------------------------------------------------------------
 
 --- Check if an item can be sourced from EMC
@@ -731,16 +655,7 @@ local function canSourceFromEmc(itemName)
     if not emcInterface or not config.useEmc then
         return false
     end
-    
-    -- Check if EMC interface has the item
-    local items = emcInterface.list()
-    for _, item in pairs(items) do
-        if item.name == itemName then
-            return true
-        end
-    end
-    
-    return false
+    return lib.peripherals.emc.canSourceItem(emcInterface, itemName)
 end
 
 --- Request items from EMC interface into input chest
@@ -752,25 +667,7 @@ local function requestFromEmc(itemName, count)
     if not emcInterface then
         return false, 0
     end
-    
-    -- Find the item in EMC interface
-    local items = emcInterface.list()
-    local sourceSlot = nil
-    
-    for slot, item in pairs(items) do
-        if item.name == itemName then
-            sourceSlot = slot
-            break
-        end
-    end
-    
-    if not sourceSlot then
-        return false, 0
-    end
-    
-    -- Push to input chest
-    local pushed = emcInterface.pushItems(inputChestName, sourceSlot, count)
-    return pushed > 0, pushed
+    return lib.peripherals.emc.requestToInventory(emcInterface, inputChestName, itemName, count)
 end
 
 --------------------------------------------------------------------------------
@@ -790,8 +687,8 @@ local function checkRecipeIngredients(itemName)
     -- Get ingredient counts
     local ingredientCounts = recipeDB.getIngredientCounts(itemName)
     
-    -- Build inventory index
-    local invIndex = buildInventoryIndex(inputChest)
+    -- Build inventory index using lib
+    local invIndex = lib.utils.inventory.buildIndex(inputChest)
     
     -- Check each ingredient and find which inventory items can satisfy it
     local missing = {}
@@ -799,7 +696,7 @@ local function checkRecipeIngredients(itemName)
     
     for ingredient, countNeeded in pairs(ingredientCounts) do
         -- Find all items in inventory that match this ingredient (tag or specific item)
-        local matchingItems = findItemsMatchingTag(ingredient, invIndex)
+        local matchingItems = recipeDB.findItemsMatchingTag(ingredient, invIndex)
         
         -- Calculate total available from all matching items
         local totalAvailable = 0
@@ -820,7 +717,7 @@ local function checkRecipeIngredients(itemName)
                 local success, actualCount = requestFromEmc(matchingItems[1], countNeeded - totalAvailable)
                 if success then
                     -- Rebuild index after EMC request
-                    invIndex = buildInventoryIndex(inputChest)
+                    invIndex = lib.utils.inventory.buildIndex(inputChest)
                     -- Recalculate availability
                     totalAvailable = 0
                     foundItems = {}
@@ -856,7 +753,7 @@ local function checkRecipeIngredients(itemName)
     local slotMapping = {}  -- Array of 9 slots (0 for empty, slot number for ingredient)
     
     -- Rebuild index one more time
-    invIndex = buildInventoryIndex(inputChest)
+    invIndex = lib.utils.inventory.buildIndex(inputChest)
     
     -- Track which slots we've used and how much
     local usedFromSlots = {}  -- slot -> count used
@@ -1059,7 +956,10 @@ local function processCraftRequest(senderId, message)
     response.message = msg
     response.crafted = craftedCount
     
-    lib.network.rednet.send(senderId, response, PROTOCOL)
+    local sendSuccess, sendErr = lib.network.rednet.send(senderId, response, PROTOCOL)
+    if not sendSuccess then
+        print("[ERROR] Failed to send response: " .. tostring(sendErr))
+    end
     print("[RESULT] " .. msg)
 end
 
@@ -1104,7 +1004,10 @@ local function processCheckRequest(senderId, message)
         end
     end
     
-    lib.network.rednet.send(senderId, response, PROTOCOL)
+    local sendSuccess, sendErr = lib.network.rednet.send(senderId, response, PROTOCOL)
+    if not sendSuccess then
+        print("[ERROR] Failed to send response: " .. tostring(sendErr))
+    end
 end
 
 --- Process a search request
@@ -1128,7 +1031,10 @@ local function processSearchRequest(senderId, message)
         count = #results
     }
     
-    lib.network.rednet.send(senderId, response, PROTOCOL)
+    local sendSuccess, sendErr = lib.network.rednet.send(senderId, response, PROTOCOL)
+    if not sendSuccess then
+        print("[ERROR] Failed to send search results: " .. tostring(sendErr))
+    end
     print("[SEARCH] Query: " .. query .. " -> " .. #results .. " results")
 end
 
@@ -1151,7 +1057,10 @@ local function processInfoRequest(senderId, message)
         recipes = stats
     }
     
-    lib.network.rednet.send(senderId, response, PROTOCOL)
+    local sendSuccess, sendErr = lib.network.rednet.send(senderId, response, PROTOCOL)
+    if not sendSuccess then
+        print("[ERROR] Failed to send info: " .. tostring(sendErr))
+    end
     print("[INFO] Sent info to " .. senderId)
 end
 
@@ -1435,6 +1344,9 @@ end
 -- Cleanup
 print("[INFO] Auto Crafter shutting down...")
 if modemSide then
-    lib.peripherals.modem.closeRednet(modemSide)
+    local success, err = lib.peripherals.modem.closeRednet(modemSide)
+    if not success then
+        print("[WARN] Error closing rednet: " .. tostring(err))
+    end
 end
 print("[INFO] Goodbye!")

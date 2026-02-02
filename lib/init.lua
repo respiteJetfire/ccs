@@ -21,7 +21,7 @@
 ]]
 
 local lib = {
-    _VERSION = "1.0.1",
+    _VERSION = "1.0.2",
     _DESCRIPTION = "CC Scripts Library Loader",
     _AUTHOR = "CCScripts",
     _LICENSE = "MIT"
@@ -97,7 +97,8 @@ local modulePaths = {
     -- Utils
     ["utils.logger"] = "utils/logger.lua",
     ["utils.error"] = "utils/error.lua",
-    ["utils.table"] = "utils/table.lua"
+    ["utils.table"] = "utils/table.lua",
+    ["utils.inventory"] = "utils/inventory.lua"
 }
 
 --- Load a specific module by name
