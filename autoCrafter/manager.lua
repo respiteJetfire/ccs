@@ -676,6 +676,75 @@ end
 -- Crafting Functions
 --------------------------------------------------------------------------------
 
+--- Find items in inventory that could match an ingredient
+--- More flexible than exact matching - handles variants like "copper" vs "copper_ingot"
+-- @param ingredient string The ingredient to match
+-- @param invIndex table The inventory index
+-- @return table Array of matching item names from inventory
+local function findMatchingItems(ingredient, invIndex)
+    -- First try exact match
+    if invIndex[ingredient] then
+        return {ingredient}
+    end
+    
+    -- Try tag-based matching if it's a tag
+    if recipeDB.isTag(ingredient) then
+        return recipeDB.findItemsMatchingTag(ingredient, invIndex)
+    end
+    
+    -- Try fuzzy matching for common variants
+    local matches = {}
+    local ingredientBase = ingredient:match("^(.+):(.+)$")
+    
+    if ingredientBase then
+        local namespace, item = ingredient:match("^(.+):(.+)$")
+        
+        -- Try common suffixes/variants
+        local variants = {
+            ingredient,
+            namespace .. ":" .. item .. "_ingot",
+            namespace .. ":" .. item .. "_block",
+            namespace .. ":" .. item .. "_ore",
+            namespace .. ":" .. item .. "_nugget",
+        }
+        
+        -- Also try without common suffixes if ingredient has them
+        if item:match("_ingot$") then
+            table.insert(variants, namespace .. ":" .. item:gsub("_ingot$", ""))
+        elseif item:match("_block$") then
+            table.insert(variants, namespace .. ":" .. item:gsub("_block$", ""))
+        elseif item:match("_ore$") then
+            table.insert(variants, namespace .. ":" .. item:gsub("_ore$", ""))
+        elseif item:match("_nugget$") then
+            table.insert(variants, namespace .. ":" .. item:gsub("_nugget$", ""))
+        end
+        
+        -- Check each variant
+        for _, variant in ipairs(variants) do
+            if invIndex[variant] then
+                table.insert(matches, variant)
+            end
+        end
+        
+        -- If still no matches, try partial matching on the item name
+        if #matches == 0 then
+            for invItem, _ in pairs(invIndex) do
+                local invNamespace, invItemName = invItem:match("^(.+):(.+)$")
+                if invNamespace == namespace then
+                    -- Check if item names are similar (contains same base word)
+                    local itemBase = item:match("^([^_]+)")
+                    local invItemBase = invItemName:match("^([^_]+)")
+                    if itemBase and invItemBase and itemBase == invItemBase then
+                        table.insert(matches, invItem)
+                    end
+                end
+            end
+        end
+    end
+    
+    return #matches > 0 and matches or {ingredient}
+end
+
 --- Check if all ingredients are available for a recipe
 -- @param itemName string The item to craft
 -- @return boolean available
@@ -698,7 +767,8 @@ local function checkRecipeIngredients(itemName)
     
     for ingredient, countNeeded in pairs(ingredientCounts) do
         -- Find all items in inventory that match this ingredient (tag or specific item)
-        local matchingItems = recipeDB.findItemsMatchingTag(ingredient, invIndex)
+        -- Use fuzzy matching to handle variants like "copper" vs "copper_ingot"
+        local matchingItems = findMatchingItems(ingredient, invIndex)
         
         -- Calculate total available from all matching items
         local totalAvailable = 0
