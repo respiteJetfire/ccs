@@ -506,6 +506,104 @@ local function resolveIngredient(ingredient)
     return ingredient
 end
 
+--- Find all items in inventory that could match a tag
+-- @param tag string The tag (e.g., "#minecraft:planks")
+-- @param invIndex table The inventory index
+-- @return table Array of item names that match the tag
+local function findItemsMatchingTag(tag, invIndex)
+    if not recipeDB.isTag(tag) then
+        return {tag}  -- Not a tag, return as-is
+    end
+    
+    local tagName = recipeDB.getTagName(tag)  -- Remove # prefix
+    local matches = {}
+    
+    -- Check all items in inventory
+    for itemName, _ in pairs(invIndex) do
+        local matchFound = false
+        
+        -- Direct pattern matching based on tag type
+        if tagName == "minecraft:planks" then
+            -- Match any wood planks (oak, birch, spruce, etc.)
+            matchFound = itemName:match("_planks$") or itemName == "minecraft:planks"
+        elseif tagName == "minecraft:logs" then
+            -- Match any logs
+            matchFound = itemName:match("_log$") or itemName == "minecraft:log"
+        elseif tagName == "minecraft:wool" then
+            -- Match any wool
+            matchFound = itemName:match("_wool$") or itemName == "minecraft:wool"
+        elseif tagName == "minecraft:stone_crafting_materials" then
+            -- Match cobblestone, blackstone, etc.
+            matchFound = itemName:match("cobblestone") or itemName:match("blackstone") or itemName == "minecraft:stone"
+        elseif tagName == "minecraft:coals" then
+            -- Match coal and charcoal
+            matchFound = itemName == "minecraft:coal" or itemName == "minecraft:charcoal"
+        elseif tagName:match("^forge:ingots/") then
+            -- Match ingots (e.g., forge:ingots/iron matches iron_ingot)
+            local material = tagName:match("^forge:ingots/(.+)$")
+            if material then
+                matchFound = itemName == ("minecraft:" .. material .. "_ingot") or 
+                             itemName:match(material .. "_ingot$")
+            end
+        elseif tagName:match("^forge:gems/") then
+            -- Match gems
+            local material = tagName:match("^forge:gems/(.+)$")
+            if material then
+                matchFound = itemName == ("minecraft:" .. material) or 
+                             itemName:match(material .. "$")
+            end
+        elseif tagName:match("^forge:dusts/") then
+            -- Match dusts
+            local material = tagName:match("^forge:dusts/(.+)$")
+            if material then
+                matchFound = itemName == ("minecraft:" .. material) or 
+                             itemName:match(material .. "$") or
+                             itemName:match(material .. "_dust$")
+            end
+        elseif tagName:match("^forge:nuggets/") then
+            -- Match nuggets
+            local material = tagName:match("^forge:nuggets/(.+)$")
+            if material then
+                matchFound = itemName == ("minecraft:" .. material .. "_nugget") or
+                             itemName:match(material .. "_nugget$")
+            end
+        elseif tagName:match("^forge:storage_blocks/") then
+            -- Match storage blocks
+            local material = tagName:match("^forge:storage_blocks/(.+)$")
+            if material then
+                matchFound = itemName == ("minecraft:" .. material .. "_block") or
+                             itemName:match(material .. "_block$")
+            end
+        elseif tagName:match("^forge:plates/") then
+            -- Match plates (modded items like create:iron_sheet)
+            local material = tagName:match("^forge:plates/(.+)$")
+            if material then
+                matchFound = itemName:match(material .. "_sheet$") or
+                             itemName:match(material .. "_plate$")
+            end
+        else
+            -- For unknown tags, try generic matching
+            -- Extract the last part of the tag and see if item name contains it
+            local tagPart = tagName:match(":(%w+)$") or tagName:match("/(%w+)$")
+            if tagPart then
+                matchFound = itemName:match(tagPart)
+            end
+        end
+        
+        if matchFound then
+            table.insert(matches, itemName)
+        end
+    end
+    
+    -- If no matches found in inventory, fall back to default resolution
+    if #matches == 0 then
+        local defaultItem = resolveIngredient(tag)
+        return {defaultItem}
+    end
+    
+    return matches
+end
+
 --------------------------------------------------------------------------------
 -- Inventory Management
 --------------------------------------------------------------------------------
@@ -628,31 +726,52 @@ local function checkRecipeIngredients(itemName)
     -- Build inventory index
     local invIndex = buildInventoryIndex(inputChest)
     
-    -- Check each ingredient
+    -- Check each ingredient and find which inventory items can satisfy it
     local missing = {}
-    local resolved = {}  -- Map of original ingredient -> resolved item name
+    local ingredientToItems = {}  -- Map of original ingredient -> array of actual items that can satisfy it
     
     for ingredient, countNeeded in pairs(ingredientCounts) do
-        local resolvedItem = resolveIngredient(ingredient)
-        resolved[ingredient] = resolvedItem
+        -- Find all items in inventory that match this ingredient (tag or specific item)
+        local matchingItems = findItemsMatchingTag(ingredient, invIndex)
         
-        local available, totalAvailable = checkAvailability(invIndex, resolvedItem, countNeeded)
+        -- Calculate total available from all matching items
+        local totalAvailable = 0
+        local foundItems = {}
+        for _, itemName in ipairs(matchingItems) do
+            local entry = invIndex[itemName]
+            if entry then
+                totalAvailable = totalAvailable + entry.total
+                table.insert(foundItems, itemName)
+            end
+        end
         
-        if not available then
-            -- Try EMC sourcing
-            if config.useEmc and canSourceFromEmc(resolvedItem) then
-                local success, actualCount = requestFromEmc(resolvedItem, countNeeded - totalAvailable)
+        ingredientToItems[ingredient] = foundItems
+        
+        if totalAvailable < countNeeded then
+            -- Try EMC sourcing for the first matching item
+            if config.useEmc and #matchingItems > 0 and canSourceFromEmc(matchingItems[1]) then
+                local success, actualCount = requestFromEmc(matchingItems[1], countNeeded - totalAvailable)
                 if success then
                     -- Rebuild index after EMC request
                     invIndex = buildInventoryIndex(inputChest)
-                    available, totalAvailable = checkAvailability(invIndex, resolvedItem, countNeeded)
+                    -- Recalculate availability
+                    totalAvailable = 0
+                    foundItems = {}
+                    for _, itemName in ipairs(matchingItems) do
+                        local entry = invIndex[itemName]
+                        if entry then
+                            totalAvailable = totalAvailable + entry.total
+                            table.insert(foundItems, itemName)
+                        end
+                    end
+                    ingredientToItems[ingredient] = foundItems
                 end
             end
             
-            if not available then
+            if totalAvailable < countNeeded then
                 table.insert(missing, {
                     ingredient = ingredient,
-                    resolved = resolvedItem,
+                    resolved = matchingItems[1] or "unknown",
                     needed = countNeeded,
                     have = totalAvailable
                 })
@@ -678,25 +797,30 @@ local function checkRecipeIngredients(itemName)
     for i = 1, 9 do
         local ingredient = slotPattern[i]
         if ingredient then
-            local resolvedItem = resolveIngredient(ingredient)
+            -- Find matching items for this ingredient
+            local matchingItems = ingredientToItems[ingredient] or findItemsMatchingTag(ingredient, invIndex)
             
-            -- Find a slot with this item that has remaining items
-            local entry = invIndex[resolvedItem]
-            if entry then
-                local foundSlot = nil
-                for _, slotInfo in ipairs(entry.slots) do
-                    local slot = slotInfo.slot
-                    local available = slotInfo.count - (usedFromSlots[slot] or 0)
-                    if available > 0 then
-                        foundSlot = slot
-                        usedFromSlots[slot] = (usedFromSlots[slot] or 0) + 1
+            -- Find a slot with any matching item that has remaining items
+            local foundSlot = nil
+            for _, itemName in ipairs(matchingItems) do
+                local entry = invIndex[itemName]
+                if entry then
+                    for _, slotInfo in ipairs(entry.slots) do
+                        local slot = slotInfo.slot
+                        local available = slotInfo.count - (usedFromSlots[slot] or 0)
+                        if available > 0 then
+                            foundSlot = slot
+                            usedFromSlots[slot] = (usedFromSlots[slot] or 0) + 1
+                            break
+                        end
+                    end
+                    if foundSlot then
                         break
                     end
                 end
-                slotMapping[i] = foundSlot or 0
-            else
-                slotMapping[i] = 0
             end
+            
+            slotMapping[i] = foundSlot or 0
         else
             slotMapping[i] = 0
         end
