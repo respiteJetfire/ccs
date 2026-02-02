@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.4.0"
+local version = "2.4.1"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -714,44 +714,23 @@ end
 -- @return table Array of {itemName, recipe, outputCount}
 local function findAllCraftableItems()
     local craftable = {}
-    local allRecipes = recipeDB.getAll()
+    local allRecipeNames = recipeDB.list()
     
-    if not allRecipes then
+    if not allRecipeNames or #allRecipeNames == 0 then
         return craftable
     end
     
-    for itemName, recipe in pairs(allRecipes) do
+    for _, itemName in ipairs(allRecipeNames) do
         local available, _ = checkRecipeIngredients(itemName)
         if available then
-            table.insert(craftable, {
-                itemName = itemName,
-                recipe = recipe,
-                outputCount = recipe.count or 1
-            })
-        end
-    end
-    
-    return craftable
-end
-
---- Find all items that can currently be crafted
--- @return table Array of {itemName, recipe, outputCount}
-local function findAllCraftableItems()
-    local craftable = {}
-    local allRecipes = recipeDB.getAll()
-    
-    if not allRecipes then
-        return craftable
-    end
-    
-    for itemName, recipe in pairs(allRecipes) do
-        local available, _ = checkRecipeIngredients(itemName)
-        if available then
-            table.insert(craftable, {
-                itemName = itemName,
-                recipe = recipe,
-                outputCount = recipe.count or 1
-            })
+            local recipe = recipeDB.get(itemName)
+            if recipe then
+                table.insert(craftable, {
+                    itemName = itemName,
+                    recipe = recipe,
+                    outputCount = recipe.count or 1
+                })
+            end
         end
     end
     
