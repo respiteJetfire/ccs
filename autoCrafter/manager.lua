@@ -42,7 +42,7 @@
 --------------------------------------------------------------------------------
 -- Version and Constants
 --------------------------------------------------------------------------------
-local version = "2.4.2"
+local version = "2.4.3"
 
 local CHECK_INTERVAL = 0.5         -- Seconds between main loop iterations
 local PROTOCOL = "auto_crafter"    -- Rednet protocol for crafting requests
@@ -1402,7 +1402,10 @@ local function processConsoleInput(input)
             print("Usage: search <query>")
         end
     elseif input == "craftall" then
-        print("Finding all craftable items...")
+        print("Scanning recipes for craftable items...")
+        print("(This may take a moment - checking thousands of recipes)")
+        print("")
+        
         local craftable = findAllCraftableItems()
         
         if #craftable == 0 then
@@ -1417,12 +1420,13 @@ local function processConsoleInput(input)
         local toCraft = {}
         
         if emcItems then
-            print("Checking which items are not in EMC interface...")
+            print("Filtering items already in EMC interface...")
             for _, item in ipairs(craftable) do
                 if not emcItems[item.itemName] then
                     table.insert(toCraft, item)
                 end
             end
+            print(string.format("%d items filtered out (already in EMC)", #craftable - #toCraft))
         else
             print("[WARN] No EMC interface - will craft all available items")
             toCraft = craftable
@@ -1433,29 +1437,54 @@ local function processConsoleInput(input)
             return
         end
         
-        print(string.format("\nCrafting %d items not in EMC...", #toCraft))
+        print(string.format("\nCrafting %d items...", #toCraft))
         print("")
         
         local crafted = 0
         local failed = 0
+        local skipped = 0
         
-        for _, item in ipairs(toCraft) do
-            print(string.format("Crafting: %s (yields %d)...", item.itemName, item.outputCount))
-            local success, msg, count = craftItem(item.itemName, 1)
-            
-            if success then
-                crafted = crafted + 1
-                print("  ✓ " .. msg)
-            else
-                failed = failed + 1
-                print("  ✗ " .. msg)
+        for i, item in ipairs(toCraft) do
+            -- Show progress every 10 items
+            if i % 10 == 0 then
+                print(string.format("[Progress: %d/%d - %d crafted, %d failed]", i, #toCraft, crafted, failed))
             end
             
-            sleep(0.1)  -- Small delay between crafts
+            -- Double-check ingredients are still available before crafting
+            local available, result = checkRecipeIngredients(item.itemName)
+            if not available then
+                skipped = skipped + 1
+                if debugMode then
+                    print(string.format("  - Skipped %s (ingredients no longer available)", item.itemName))
+                end
+                goto continue
+            end
+            
+            -- Attempt to craft
+            local success, msg, count = craftItem(item.itemName, 1)
+            
+            if success and count and count > 0 then
+                crafted = crafted + 1
+                if debugMode then
+                    print(string.format("  ✓ Crafted %s", item.itemName))
+                end
+            else
+                failed = failed + 1
+                if debugMode then
+                    print(string.format("  ✗ Failed %s: %s", item.itemName, msg or "unknown error"))
+                end
+            end
+            
+            sleep(0.05)  -- Small delay between crafts
+            ::continue::
         end
         
         print("")
-        print(string.format("Summary: %d crafted, %d failed, %d total", crafted, failed, #toCraft))
+        print(string.format("=== Craft All Complete ==="))
+        print(string.format("  Crafted: %d", crafted))
+        print(string.format("  Failed:  %d", failed))
+        print(string.format("  Skipped: %d", skipped))
+        print(string.format("  Total:   %d", #toCraft))
         print("")
     else
         print("Unknown command. Type 'help' for available commands.")
